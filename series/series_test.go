@@ -260,3 +260,243 @@ func TestFloat64MeanEmptySeries(t *testing.T) {
 		t.Errorf("Expected 0 for empty series, got %f", mean)
 	}
 }
+
+func TestFloat64SeriesStd(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0}, nil)
+	std := s.Std()
+	if std < 2.0 || std > 2.5 {
+		t.Errorf("Expected ~2.0, got %f", std)
+	}
+}
+
+func TestFloat64SeriesVariance(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0}, nil)
+	variance := s.Variance()
+	if variance < 4.0 || variance > 5.0 {
+		t.Errorf("Expected ~4.5, got %f", variance)
+	}
+}
+
+func TestFloat64SeriesMedian(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{1.0, 2.0, 3.0, 4.0, 5.0}, nil)
+	median := s.Median()
+	if median != 3.0 {
+		t.Errorf("Expected 3.0, got %f", median)
+	}
+}
+
+func TestFloat64SeriesQuantile(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0}, nil)
+	q := s.Quantile(0.25)
+	if q < 2.5 || q > 3.5 {
+		t.Errorf("Expected ~3.0, got %f", q)
+	}
+}
+
+func TestInt64SeriesStd(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{2, 4, 4, 4, 5, 5, 7, 9}, nil)
+	std := s.Std()
+	if std < 2.0 || std > 2.5 {
+		t.Errorf("Expected ~2.0, got %f", std)
+	}
+}
+
+func TestInt64SeriesVariance(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{2, 4, 4, 4, 5, 5, 7, 9}, nil)
+	variance := s.Variance()
+	if variance < 4.0 || variance > 5.0 {
+		t.Errorf("Expected ~4.5, got %f", variance)
+	}
+}
+
+func TestInt64SeriesMedian(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{1, 2, 3, 4, 5}, nil)
+	median := s.Median()
+	if median != 3.0 {
+		t.Errorf("Expected 3.0, got %f", median)
+	}
+}
+
+func TestInt64SeriesQuantile(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, nil)
+	q := s.Quantile(0.25)
+	if q < 2.5 || q > 3.5 {
+		t.Errorf("Expected ~3.0, got %f", q)
+	}
+}
+
+func TestInt64SeriesNUnique(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{1, 2, 2, 3, 3, 3}, nil)
+	nunique := s.NUnique()
+	if nunique != 3 {
+		t.Errorf("Expected 3 unique values, got %d", nunique)
+	}
+}
+
+func TestInt64SeriesFirst(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{10, 20, 30}, nil)
+	first := s.First()
+	if first != 10 {
+		t.Errorf("Expected 10, got %d", first)
+	}
+}
+
+func TestInt64SeriesLast(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{10, 20, 30}, nil)
+	last := s.Last()
+	if last != 30 {
+		t.Errorf("Expected 30, got %d", last)
+	}
+}
+
+func TestFloat64SeriesNUnique(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{1.0, 2.0, 2.0, 3.0}, nil)
+	nunique := s.NUnique()
+	if nunique != 3 {
+		t.Errorf("Expected 3 unique values, got %d", nunique)
+	}
+}
+
+func TestFloat64SeriesFirst(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{10.5, 20.5, 30.5}, nil)
+	first := s.First()
+	if first != 10.5 {
+		t.Errorf("Expected 10.5, got %f", first)
+	}
+}
+
+func TestFloat64SeriesLast(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{10.5, 20.5, 30.5}, nil)
+	last := s.Last()
+	if last != 30.5 {
+		t.Errorf("Expected 30.5, got %f", last)
+	}
+}
+
+func TestInt64SeriesStdEmpty(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{}, nil)
+	std := s.Std()
+	if std != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", std)
+	}
+}
+
+func TestInt64SeriesStdSingle(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{5}, nil)
+	std := s.Std()
+	if std != 0 {
+		t.Errorf("Expected 0 for single element, got %f", std)
+	}
+}
+
+func TestFloat64SeriesStdEmpty(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{}, nil)
+	std := s.Std()
+	if std != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", std)
+	}
+}
+
+func TestFloat64SeriesStdSingle(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{5.0}, nil)
+	std := s.Std()
+	if std != 0 {
+		t.Errorf("Expected 0 for single element, got %f", std)
+	}
+}
+
+func TestInt64SeriesVarianceEmpty(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{}, nil)
+	v := s.Variance()
+	if v != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", v)
+	}
+}
+
+func TestInt64SeriesVarianceSingle(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{5}, nil)
+	v := s.Variance()
+	if v != 0 {
+		t.Errorf("Expected 0 for single element, got %f", v)
+	}
+}
+
+func TestFloat64SeriesVarianceEmpty(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{}, nil)
+	v := s.Variance()
+	if v != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", v)
+	}
+}
+
+func TestFloat64SeriesVarianceSingle(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{5.0}, nil)
+	v := s.Variance()
+	if v != 0 {
+		t.Errorf("Expected 0 for single element, got %f", v)
+	}
+}
+
+func TestInt64SeriesMedianEmpty(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{}, nil)
+	m := s.Median()
+	if m != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", m)
+	}
+}
+
+func TestFloat64SeriesMedianEmpty(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{}, nil)
+	m := s.Median()
+	if m != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", m)
+	}
+}
+
+func TestInt64SeriesQuantileEmpty(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{}, nil)
+	q := s.Quantile(0.5)
+	if q != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", q)
+	}
+}
+
+func TestFloat64SeriesQuantileEmpty(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{}, nil)
+	q := s.Quantile(0.5)
+	if q != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", q)
+	}
+}
+
+func TestInt64SeriesFirstEmpty(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{}, nil)
+	f := s.First()
+	if f != 0 {
+		t.Errorf("Expected 0 for empty series, got %d", f)
+	}
+}
+
+func TestInt64SeriesLastEmpty(t *testing.T) {
+	s := NewInt64Series("values", memory.DefaultAllocator, []int64{}, nil)
+	l := s.Last()
+	if l != 0 {
+		t.Errorf("Expected 0 for empty series, got %d", l)
+	}
+}
+
+func TestFloat64SeriesFirstEmpty(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{}, nil)
+	f := s.First()
+	if f != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", f)
+	}
+}
+
+func TestFloat64SeriesLastEmpty(t *testing.T) {
+	s := NewFloat64Series("values", memory.DefaultAllocator, []float64{}, nil)
+	l := s.Last()
+	if l != 0 {
+		t.Errorf("Expected 0 for empty series, got %f", l)
+	}
+}

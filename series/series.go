@@ -1,6 +1,9 @@
 package series
 
 import (
+	"math"
+	"sort"
+
 	grizzarrows "github.com/ecelayes/grizz/internal/arrow"
 	grizzmemory "github.com/ecelayes/grizz/internal/memory"
 )
@@ -117,4 +120,115 @@ func (s *Float64Series) Count() int {
 		}
 	}
 	return count
+}
+
+func (s *Float64Series) Std() float64 {
+	if s.Len() == 0 {
+		return 0
+	}
+	mean := s.Mean()
+	var sumSq float64
+	count := 0
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			diff := s.Value(i) - mean
+			sumSq += diff * diff
+			count++
+		}
+	}
+	if count <= 1 {
+		return 0
+	}
+	return math.Sqrt(float64(sumSq) / float64(count-1))
+}
+
+func (s *Float64Series) Variance() float64 {
+	if s.Len() == 0 {
+		return 0
+	}
+	mean := s.Mean()
+	var sumSq float64
+	count := 0
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			diff := s.Value(i) - mean
+			sumSq += diff * diff
+			count++
+		}
+	}
+	if count <= 1 {
+		return 0
+	}
+	return float64(sumSq) / float64(count-1)
+}
+
+func (s *Float64Series) Median() float64 {
+	if s.Len() == 0 {
+		return 0
+	}
+	var values []float64
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			values = append(values, s.Value(i))
+		}
+	}
+	if len(values) == 0 {
+		return 0
+	}
+	sort.Float64s(values)
+	mid := len(values) / 2
+	if len(values)%2 == 0 {
+		return (values[mid-1] + values[mid]) / 2
+	}
+	return values[mid]
+}
+
+func (s *Float64Series) Quantile(q float64) float64 {
+	if s.Len() == 0 || q < 0 || q > 1 {
+		return 0
+	}
+	var values []float64
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			values = append(values, s.Value(i))
+		}
+	}
+	if len(values) == 0 {
+		return 0
+	}
+	sort.Float64s(values)
+	pos := float64(len(values)-1) * q
+	idx := int(pos)
+	frac := pos - float64(idx)
+	if idx+1 < len(values) {
+		return values[idx]*(1-frac) + values[idx+1]*frac
+	}
+	return values[idx]
+}
+
+func (s *Float64Series) NUnique() int {
+	if s.Len() == 0 {
+		return 0
+	}
+	unique := make(map[float64]bool)
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			unique[s.Value(i)] = true
+		}
+	}
+	return len(unique)
+}
+
+func (s *Float64Series) First() float64 {
+	if s.Len() == 0 {
+		return 0
+	}
+	return s.Value(0)
+}
+
+func (s *Float64Series) Last() float64 {
+	if s.Len() == 0 {
+		return 0
+	}
+	return s.Value(s.Len() - 1)
 }

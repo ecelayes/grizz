@@ -65,3 +65,27 @@ func FillNull(e Expr, value Expr) FillNullExpr {
 func Coalesce(exprs ...Expr) CoalesceExpr {
 	return CoalesceExpr{Exprs: exprs}
 }
+
+type FillNullForwardExpr struct {
+	Expr Expr
+}
+
+func (e FillNullForwardExpr) String() string {
+	return fmt.Sprintf("FillNullForward(%s)", e.Expr.String())
+}
+
+type FillNullBackwardExpr struct {
+	Expr Expr
+}
+
+func (e FillNullBackwardExpr) String() string {
+	return fmt.Sprintf("FillNullBackward(%s)", e.Expr.String())
+}
+
+func FillNullForward(e Expr) FillNullForwardExpr {
+	return FillNullForwardExpr{Expr: e}
+}
+
+func FillNullBackward(e Expr) FillNullBackwardExpr {
+	return FillNullBackwardExpr{Expr: e}
+}

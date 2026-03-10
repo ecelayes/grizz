@@ -393,3 +393,155 @@ func TestWhenExprString(t *testing.T) {
 		t.Errorf("Expected %s, got %s", expected, result.String())
 	}
 }
+
+func TestStringLength(t *testing.T) {
+	result := Length(Col("name"))
+	expected := "Length(name)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestStringSplit(t *testing.T) {
+	result := Split(Col("names"), Lit(","))
+	expected := `Split(names, ",")`
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestStringTrim(t *testing.T) {
+	result := Trim(Col("name"))
+	expected := "Trim(name)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestStringLPad(t *testing.T) {
+	result := LPad(Col("name"), Lit(10))
+	expected := "LPad(name, 10)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestStringRPad(t *testing.T) {
+	result := RPad(Col("name"), Lit(10))
+	expected := "RPad(name, 10)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestStringContainsRegex(t *testing.T) {
+	result := ContainsRegex(Col("name"), Lit("^test"))
+	expected := `ContainsRegex(name, "^test")`
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestStringSlice(t *testing.T) {
+	result := Slice(Col("name"), Lit(0), Lit(5))
+	expected := "Slice(name, 0, 5)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestFillNullForward(t *testing.T) {
+	result := FillNullForward(Col("score"))
+	expected := "FillNullForward(score)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestFillNullBackward(t *testing.T) {
+	result := FillNullBackward(Col("score"))
+	expected := "FillNullBackward(score)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestColumnChainingAdd(t *testing.T) {
+	result := Col("a").Add(Lit(10)).Add(Lit(5))
+	expected := "((a + 10) + 5)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestColumnChainingMul(t *testing.T) {
+	result := Col("a").Mul(Lit(2)).Mul(Lit(3))
+	expected := "((a * 2) * 3)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestColumnChainingAlias(t *testing.T) {
+	result := Col("a").Add(Lit(10)).Alias("result")
+	expected := "(a + 10) AS result"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestColumnAnd(t *testing.T) {
+	result := Col("a").Gt(Lit(5)).And(Col("b").Lt(Lit(10)))
+	expected := "((a > 5) And (b < 10))"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestColumnOr(t *testing.T) {
+	result := Col("a").Eq(Lit(1)).Or(Col("b").Eq(Lit(2)))
+	expected := "((a == 1) Or (b == 2))"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestAggregationNUnique(t *testing.T) {
+	result := NUnique("age")
+	expected := "NUnique(age)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestAggregationFirst(t *testing.T) {
+	result := First("name")
+	expected := "First(name)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestAggregationLast(t *testing.T) {
+	result := Last("value")
+	expected := "Last(value)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestAggregationArgMin(t *testing.T) {
+	result := ArgMin("score")
+	expected := "ArgMin(score)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}
+
+func TestAggregationArgMax(t *testing.T) {
+	result := ArgMax("temperature")
+	expected := "ArgMax(temperature)"
+	if result.String() != expected {
+		t.Errorf("Expected %s, got %s", expected, result.String())
+	}
+}

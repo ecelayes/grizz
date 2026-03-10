@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/ecelayes/grizz/dataframe"
+	"github.com/ecelayes/grizz/internal/memory"
 	"github.com/ecelayes/grizz/series"
 )
 
@@ -67,6 +68,20 @@ func executeParallel(plan dataframe.LogicalPlan, workers int) (*dataframe.DataFr
 		}
 		return applyLimit(inputDF, p.Limit)
 
+	case dataframe.TailPlan:
+		inputDF, err := executeParallel(p.Input, workers)
+		if err != nil {
+			return nil, err
+		}
+		return applyTail(inputDF, p.N)
+
+	case dataframe.SamplePlan:
+		inputDF, err := executeParallel(p.Input, workers)
+		if err != nil {
+			return nil, err
+		}
+		return applySample(inputDF, p.N, p.Frac, p.Replace)
+
 	case dataframe.JoinPlan:
 		leftDF, err := executeParallel(p.Left, workers)
 		if err != nil {
@@ -91,6 +106,13 @@ func executeParallel(plan dataframe.LogicalPlan, workers int) (*dataframe.DataFr
 			return nil, err
 		}
 		return applyDropNulls(inputDF)
+
+	case dataframe.WindowPlan:
+		inputDF, err := executeParallel(p.Input, workers)
+		if err != nil {
+			return nil, err
+		}
+		return applyWindow(inputDF, p.Func, p.PartBy, p.OrderBy)
 
 	default:
 		return nil, nil
@@ -149,5 +171,54 @@ func applyMaskParallel(df *dataframe.DataFrame, mask []bool, workers int) (*data
 }
 
 func filterColumnParallel(col series.Series, mask []bool) series.Series {
-	return col
+	alloc := memory.DefaultAllocator
+
+	switch typedCol := col.(type) {
+	case *series.StringSeries:
+		var filtered []string
+		var valid []bool
+		for j, keep := range mask {
+			if keep {
+				filtered = append(filtered, typedCol.Value(j))
+				valid = append(valid, !typedCol.IsNull(j))
+			}
+		}
+		return series.NewStringSeries(typedCol.Name(), alloc, filtered, valid)
+
+	case *series.Int64Series:
+		var filtered []int64
+		var valid []bool
+		for j, keep := range mask {
+			if keep {
+				filtered = append(filtered, typedCol.Value(j))
+				valid = append(valid, !typedCol.IsNull(j))
+			}
+		}
+		return series.NewInt64Series(typedCol.Name(), alloc, filtered, valid)
+
+	case *series.Float64Series:
+		var filtered []float64
+		var valid []bool
+		for j, keep := range mask {
+			if keep {
+				filtered = append(filtered, typedCol.Value(j))
+				valid = append(valid, !typedCol.IsNull(j))
+			}
+		}
+		return series.NewFloat64Series(typedCol.Name(), alloc, filtered, valid)
+
+	case *series.BooleanSeries:
+		var filtered []bool
+		var valid []bool
+		for j, keep := range mask {
+			if keep {
+				filtered = append(filtered, typedCol.Value(j))
+				valid = append(valid, !typedCol.IsNull(j))
+			}
+		}
+		return series.NewBooleanSeries(typedCol.Name(), alloc, filtered, valid)
+
+	default:
+		return col
+	}
 }

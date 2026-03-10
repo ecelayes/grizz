@@ -25,6 +25,7 @@ func (o *Optimizer) optimize(plan dataframe.LogicalPlan) dataframe.LogicalPlan {
 	case dataframe.FilterPlan:
 		p.Input = o.optimize(p.Input)
 		p = o.optimizeFilter(p)
+		p = o.pushDownFilter(p)
 		return p
 
 	case dataframe.SelectPlan:
@@ -40,6 +41,7 @@ func (o *Optimizer) optimize(plan dataframe.LogicalPlan) dataframe.LogicalPlan {
 		p.Left = o.optimize(p.Left)
 		p.Right = o.optimize(p.Right)
 		p = o.optimizeJoin(p)
+		p = o.pushDownFilterToJoin(p)
 		return p
 
 	case dataframe.GroupByPlan:
@@ -53,6 +55,26 @@ func (o *Optimizer) optimize(plan dataframe.LogicalPlan) dataframe.LogicalPlan {
 	case dataframe.LimitPlan:
 		p.Input = o.optimize(p.Input)
 		p = o.optimizeLimit(p)
+		return p
+
+	case dataframe.TailPlan:
+		p.Input = o.optimize(p.Input)
+		return p
+
+	case dataframe.SamplePlan:
+		p.Input = o.optimize(p.Input)
+		return p
+
+	case dataframe.WindowPlan:
+		p.Input = o.optimize(p.Input)
+		return p
+
+	case dataframe.DistinctPlan:
+		p.Input = o.optimize(p.Input)
+		return p
+
+	case dataframe.DropNullsPlan:
+		p.Input = o.optimize(p.Input)
 		return p
 
 	default:
@@ -142,4 +164,73 @@ func (o *Optimizer) canPushDown(plan dataframe.LogicalPlan) bool {
 	default:
 		return false
 	}
+}
+
+func (o *Optimizer) pushDownFilter(p dataframe.FilterPlan) dataframe.FilterPlan {
+	input := p.Input
+
+	switch inp := input.(type) {
+	case dataframe.SelectPlan:
+		newFilter := dataframe.FilterPlan{
+			Input:     inp.Input,
+			Condition: p.Condition,
+		}
+		return dataframe.FilterPlan{
+			Input:     newFilter,
+			Condition: p.Condition,
+		}
+
+	case dataframe.WithColumnsPlan:
+		newFilter := dataframe.FilterPlan{
+			Input:     inp.Input,
+			Condition: p.Condition,
+		}
+		return dataframe.FilterPlan{
+			Input:     dataframe.WithColumnsPlan{Input: newFilter, Columns: inp.Columns},
+			Condition: p.Condition,
+		}
+
+	case dataframe.LimitPlan:
+		newFilter := dataframe.FilterPlan{
+			Input:     inp.Input,
+			Condition: p.Condition,
+		}
+		return dataframe.FilterPlan{
+			Input:     dataframe.LimitPlan{Input: newFilter, Limit: inp.Limit},
+			Condition: p.Condition,
+		}
+	}
+
+	return p
+}
+
+func (o *Optimizer) pushDownFilterToJoin(p dataframe.JoinPlan) dataframe.JoinPlan {
+	leftFilter, leftHasFilter := p.Left.(dataframe.FilterPlan)
+	rightFilter, rightHasFilter := p.Right.(dataframe.FilterPlan)
+
+	if leftHasFilter && !rightHasFilter {
+		p.Right = dataframe.FilterPlan{
+			Input:     p.Right,
+			Condition: leftFilter.Condition,
+		}
+		p.Left = leftFilter.Input
+		return p
+	}
+
+	if rightHasFilter && !leftHasFilter {
+		p.Left = dataframe.FilterPlan{
+			Input:     p.Left,
+			Condition: rightFilter.Condition,
+		}
+		p.Right = rightFilter.Input
+		return p
+	}
+
+	if leftHasFilter && rightHasFilter {
+		p.Left = leftFilter.Input
+		p.Right = rightFilter.Input
+		return p
+	}
+
+	return p
 }

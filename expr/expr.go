@@ -38,6 +38,14 @@ func (c Column) Ne(other Expr) BinaryOp {
 	return BinaryOp{Left: c, Op: "!=", Right: other}
 }
 
+func (c Column) And(other Expr) LogicalOp {
+	return LogicalOp{Left: c, Op: "And", Right: other}
+}
+
+func (c Column) Or(other Expr) LogicalOp {
+	return LogicalOp{Left: c, Op: "Or", Right: other}
+}
+
 type Literal struct {
 	Value any
 }
@@ -59,6 +67,14 @@ type BinaryOp struct {
 
 func (b BinaryOp) String() string {
 	return fmt.Sprintf("(%s %s %s)", b.Left.String(), b.Op, b.Right.String())
+}
+
+func (b BinaryOp) And(other Expr) LogicalOp {
+	return LogicalOp{Left: b, Op: "And", Right: other}
+}
+
+func (b BinaryOp) Or(other Expr) LogicalOp {
+	return LogicalOp{Left: b, Op: "Or", Right: other}
 }
 
 type LogicalOp struct {
@@ -136,4 +152,32 @@ func (c Column) Mul(other Expr) ArithmeticOp {
 
 func (c Column) Div(other Expr) ArithmeticOp {
 	return ArithmeticOp{Left: c, Op: "/", Right: other}
+}
+
+func (c Column) Alias(name string) AliasExpr {
+	return AliasExpr{Expr: c, Alias: name}
+}
+
+func (a ArithmeticOp) Add(other Expr) ArithmeticOp {
+	return ArithmeticOp{Left: a, Op: "+", Right: other}
+}
+
+func (a ArithmeticOp) Sub(other Expr) ArithmeticOp {
+	return ArithmeticOp{Left: a, Op: "-", Right: other}
+}
+
+func (a ArithmeticOp) Mul(other Expr) ArithmeticOp {
+	return ArithmeticOp{Left: a, Op: "*", Right: other}
+}
+
+func (a ArithmeticOp) Div(other Expr) ArithmeticOp {
+	return ArithmeticOp{Left: a, Op: "/", Right: other}
+}
+
+func (a ArithmeticOp) Alias(name string) AliasExpr {
+	return AliasExpr{Expr: a, Alias: name}
+}
+
+func (b BinaryOp) Alias(name string) AliasExpr {
+	return AliasExpr{Expr: b, Alias: name}
 }

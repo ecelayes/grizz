@@ -138,6 +138,16 @@ func calculateAggFloat(col *series.Float64Series, indices []int, aggFunc expr.Ag
 		return quantileFloat(col, indices, 0.5)
 	case expr.QuantileAgg:
 		return quantileFloat(col, indices, param)
+	case expr.NUniqueAgg:
+		return nuniqueFloat(col, indices)
+	case expr.FirstAgg:
+		return firstFloat(col, indices)
+	case expr.LastAgg:
+		return lastFloat(col, indices)
+	case expr.ArgMinAgg:
+		return argminFloat(col, indices)
+	case expr.ArgMaxAgg:
+		return argmaxFloat(col, indices)
 	}
 	return 0
 }
@@ -286,4 +296,59 @@ func quantileInt(col *series.Int64Series, indices []int, q float64) float64 {
 	}
 	weight := pos - float64(lower)
 	return values[lower]*(1-weight) + values[upper]*weight
+}
+
+func nuniqueFloat(col *series.Float64Series, indices []int) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+	unique := make(map[float64]bool)
+	for _, idx := range indices {
+		unique[col.Value(idx)] = true
+	}
+	return float64(len(unique))
+}
+
+func firstFloat(col *series.Float64Series, indices []int) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+	return col.Value(indices[0])
+}
+
+func lastFloat(col *series.Float64Series, indices []int) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+	return col.Value(indices[len(indices)-1])
+}
+
+func argminFloat(col *series.Float64Series, indices []int) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+	minVal := col.Value(indices[0])
+	minIdx := indices[0]
+	for _, idx := range indices {
+		if col.Value(idx) < minVal {
+			minVal = col.Value(idx)
+			minIdx = idx
+		}
+	}
+	return float64(minIdx)
+}
+
+func argmaxFloat(col *series.Float64Series, indices []int) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+	maxVal := col.Value(indices[0])
+	maxIdx := indices[0]
+	for _, idx := range indices {
+		if col.Value(idx) > maxVal {
+			maxVal = col.Value(idx)
+			maxIdx = idx
+		}
+	}
+	return float64(maxIdx)
 }

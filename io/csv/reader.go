@@ -35,13 +35,37 @@ func Read(filePath string) (*dataframe.DataFrame, error) {
 
 	colTypes := make([]string, numCols)
 	for i := 0; i < numCols; i++ {
-		sample := dataRows[0][i]
-		if _, err := strconv.ParseBool(sample); err == nil {
-			colTypes[i] = "bool"
-		} else if _, err := strconv.ParseInt(sample, 10, 64); err == nil {
+		isBool := true
+		isInt := true
+		isFloat := true
+		hasValue := false
+
+		for rowIdx := 0; rowIdx < numRows; rowIdx++ {
+			sample := dataRows[rowIdx][i]
+			if sample == "" {
+				continue
+			}
+			hasValue = true
+
+			if _, err := strconv.ParseBool(sample); err != nil {
+				isBool = false
+			}
+			if _, err := strconv.ParseInt(sample, 10, 64); err != nil {
+				isInt = false
+			}
+			if _, err := strconv.ParseFloat(sample, 64); err != nil {
+				isFloat = false
+			}
+		}
+
+		if !hasValue {
+			colTypes[i] = "string"
+		} else if isInt {
 			colTypes[i] = "int"
-		} else if _, err := strconv.ParseFloat(sample, 64); err == nil {
+		} else if isFloat {
 			colTypes[i] = "float"
+		} else if isBool {
+			colTypes[i] = "bool"
 		} else {
 			colTypes[i] = "string"
 		}
@@ -56,31 +80,67 @@ func Read(filePath string) (*dataframe.DataFrame, error) {
 		switch colTypes[colIdx] {
 		case "bool":
 			values := make([]bool, numRows)
+			valid := make([]bool, numRows)
 			for rowIdx := 0; rowIdx < numRows; rowIdx++ {
-				val, _ := strconv.ParseBool(dataRows[rowIdx][colIdx])
-				values[rowIdx] = val
+				val := dataRows[rowIdx][colIdx]
+				if val == "" {
+					valid[rowIdx] = false
+					continue
+				}
+				parsed, err := strconv.ParseBool(val)
+				if err != nil {
+					valid[rowIdx] = false
+					continue
+				}
+				values[rowIdx] = parsed
+				valid[rowIdx] = true
 			}
-			df.AddSeries(series.NewBooleanSeries(colName, alloc, values, nil))
+			df.AddSeries(series.NewBooleanSeries(colName, alloc, values, valid))
 		case "int":
 			values := make([]int64, numRows)
+			valid := make([]bool, numRows)
 			for rowIdx := 0; rowIdx < numRows; rowIdx++ {
-				val, _ := strconv.ParseInt(dataRows[rowIdx][colIdx], 10, 64)
-				values[rowIdx] = val
+				val := dataRows[rowIdx][colIdx]
+				if val == "" {
+					valid[rowIdx] = false
+					continue
+				}
+				parsed, err := strconv.ParseInt(val, 10, 64)
+				if err != nil {
+					valid[rowIdx] = false
+					continue
+				}
+				values[rowIdx] = parsed
+				valid[rowIdx] = true
 			}
-			df.AddSeries(series.NewInt64Series(colName, alloc, values, nil))
+			df.AddSeries(series.NewInt64Series(colName, alloc, values, valid))
 		case "float":
 			values := make([]float64, numRows)
+			valid := make([]bool, numRows)
 			for rowIdx := 0; rowIdx < numRows; rowIdx++ {
-				val, _ := strconv.ParseFloat(dataRows[rowIdx][colIdx], 64)
-				values[rowIdx] = val
+				val := dataRows[rowIdx][colIdx]
+				if val == "" {
+					valid[rowIdx] = false
+					continue
+				}
+				parsed, err := strconv.ParseFloat(val, 64)
+				if err != nil {
+					valid[rowIdx] = false
+					continue
+				}
+				values[rowIdx] = parsed
+				valid[rowIdx] = true
 			}
-			df.AddSeries(series.NewFloat64Series(colName, alloc, values, nil))
+			df.AddSeries(series.NewFloat64Series(colName, alloc, values, valid))
 		default:
 			values := make([]string, numRows)
+			valid := make([]bool, numRows)
 			for rowIdx := 0; rowIdx < numRows; rowIdx++ {
-				values[rowIdx] = dataRows[rowIdx][colIdx]
+				val := dataRows[rowIdx][colIdx]
+				values[rowIdx] = val
+				valid[rowIdx] = val != ""
 			}
-			df.AddSeries(series.NewStringSeries(colName, alloc, values, nil))
+			df.AddSeries(series.NewStringSeries(colName, alloc, values, valid))
 		}
 	}
 

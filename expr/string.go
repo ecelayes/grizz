@@ -64,3 +64,93 @@ func Lower(expr Expr) LowerExpr {
 func Strip(expr Expr) StripExpr {
 	return StripExpr{Expr: expr}
 }
+
+type LengthExpr struct {
+	Expr Expr
+}
+
+func (e LengthExpr) String() string {
+	return fmt.Sprintf("Length(%s)", e.Expr.String())
+}
+
+func Length(expr Expr) LengthExpr {
+	return LengthExpr{Expr: expr}
+}
+
+type SplitExpr struct {
+	Expr  Expr
+	Delim Expr
+}
+
+func (e SplitExpr) String() string {
+	return fmt.Sprintf("Split(%s, %s)", e.Expr.String(), e.Delim.String())
+}
+
+func Split(expr Expr, delim Expr) SplitExpr {
+	return SplitExpr{Expr: expr, Delim: delim}
+}
+
+type TrimExpr struct {
+	Expr Expr
+}
+
+func (e TrimExpr) String() string {
+	return fmt.Sprintf("Trim(%s)", e.Expr.String())
+}
+
+func Trim(expr Expr) TrimExpr {
+	return TrimExpr{Expr: expr}
+}
+
+type LPadExpr struct {
+	Expr   Expr
+	Length Expr
+}
+
+func (e LPadExpr) String() string {
+	return fmt.Sprintf("LPad(%s, %s)", e.Expr.String(), e.Length.String())
+}
+
+func LPad(expr Expr, length Expr) LPadExpr {
+	return LPadExpr{Expr: expr, Length: length}
+}
+
+type RPadExpr struct {
+	Expr   Expr
+	Length Expr
+}
+
+func (e RPadExpr) String() string {
+	return fmt.Sprintf("RPad(%s, %s)", e.Expr.String(), e.Length.String())
+}
+
+func RPad(expr Expr, length Expr) RPadExpr {
+	return RPadExpr{Expr: expr, Length: length}
+}
+
+type ContainsRegexExpr struct {
+	Expr    Expr
+	Pattern Expr
+}
+
+func (e ContainsRegexExpr) String() string {
+	return fmt.Sprintf("ContainsRegex(%s, %s)", e.Expr.String(), e.Pattern.String())
+}
+
+func ContainsRegex(expr Expr, pattern Expr) ContainsRegexExpr {
+	return ContainsRegexExpr{Expr: expr, Pattern: pattern}
+}
+
+type SliceExpr struct {
+	Expr   Expr
+	Start  Expr
+	Length Expr
+}
+
+func (e SliceExpr) String() string {
+	return fmt.Sprintf("Slice(%s, %s, %s)", e.Expr.String(), e.Start.String(), e.Length.String())
+}
+
+func Slice(expr Expr, start Expr, length Expr) SliceExpr {
+	return SliceExpr{Expr: expr, Start: start, Length: length}
+}

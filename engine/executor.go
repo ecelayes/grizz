@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -65,6 +66,20 @@ func Execute(plan dataframe.LogicalPlan) (*dataframe.DataFrame, error) {
 		}
 		return applyLimit(inputDF, p.Limit)
 
+	case dataframe.TailPlan:
+		inputDF, err := Execute(p.Input)
+		if err != nil {
+			return nil, err
+		}
+		return applyTail(inputDF, p.N)
+
+	case dataframe.SamplePlan:
+		inputDF, err := Execute(p.Input)
+		if err != nil {
+			return nil, err
+		}
+		return applySample(inputDF, p.N, p.Frac, p.Replace)
+
 	case dataframe.JoinPlan:
 		leftDF, err := Execute(p.Left)
 		if err != nil {
@@ -74,7 +89,11 @@ func Execute(plan dataframe.LogicalPlan) (*dataframe.DataFrame, error) {
 		if err != nil {
 			return nil, err
 		}
-		return applyJoin(leftDF, rightDF, p.On, p.How)
+		onCol := p.On
+		if len(p.OnCols) > 0 {
+			onCol = p.OnCols[0]
+		}
+		return applyJoin(leftDF, rightDF, onCol, p.How)
 
 	case dataframe.DropNullsPlan:
 		inputDF, err := Execute(p.Input)
@@ -89,6 +108,13 @@ func Execute(plan dataframe.LogicalPlan) (*dataframe.DataFrame, error) {
 			return nil, err
 		}
 		return applyDistinct(inputDF)
+
+	case dataframe.WindowPlan:
+		inputDF, err := Execute(p.Input)
+		if err != nil {
+			return nil, err
+		}
+		return applyWindow(inputDF, p.Func, p.PartBy, p.OrderBy)
 
 	default:
 		return nil, errors.New("unknown logical plan node")
@@ -206,6 +232,12 @@ func evaluateCondition(df *dataframe.DataFrame, condition expr.Expr) ([]bool, er
 						target = v
 					}
 					mask[i] = intCol.Value(i) > target
+				} else if boolCol, ok := col.(*series.BooleanSeries); ok {
+					target, ok := litExpr.Value.(bool)
+					if !ok {
+						return nil, errors.New("boolean column requires boolean literal for > operator")
+					}
+					mask[i] = boolCol.Value(i) && !target
 				}
 			case "<":
 				if floatCol, ok := col.(*series.Float64Series); ok {
@@ -219,6 +251,12 @@ func evaluateCondition(df *dataframe.DataFrame, condition expr.Expr) ([]bool, er
 						target = v
 					}
 					mask[i] = intCol.Value(i) < target
+				} else if boolCol, ok := col.(*series.BooleanSeries); ok {
+					target, ok := litExpr.Value.(bool)
+					if !ok {
+						return nil, errors.New("boolean column requires boolean literal for < operator")
+					}
+					mask[i] = !boolCol.Value(i) && target
 				}
 			case "<=":
 				if floatCol, ok := col.(*series.Float64Series); ok {
@@ -232,6 +270,12 @@ func evaluateCondition(df *dataframe.DataFrame, condition expr.Expr) ([]bool, er
 						target = v
 					}
 					mask[i] = intCol.Value(i) <= target
+				} else if boolCol, ok := col.(*series.BooleanSeries); ok {
+					target, ok := litExpr.Value.(bool)
+					if !ok {
+						return nil, errors.New("boolean column requires boolean literal for <= operator")
+					}
+					mask[i] = boolCol.Value(i) == target || !target
 				}
 			case ">=":
 				if floatCol, ok := col.(*series.Float64Series); ok {
@@ -245,6 +289,12 @@ func evaluateCondition(df *dataframe.DataFrame, condition expr.Expr) ([]bool, er
 						target = v
 					}
 					mask[i] = intCol.Value(i) >= target
+				} else if boolCol, ok := col.(*series.BooleanSeries); ok {
+					target, ok := litExpr.Value.(bool)
+					if !ok {
+						return nil, errors.New("boolean column requires boolean literal for >= operator")
+					}
+					mask[i] = boolCol.Value(i) == target || target
 				}
 			case "!=":
 				if strCol, ok := col.(*series.StringSeries); ok {
@@ -441,7 +491,16 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 				var valid []bool
 				for j := 0; j < typedCol.Len(); j++ {
 					if typedCol.IsNull(j) {
-						resultVals = append(resultVals, fillValue.(float64))
+						var fv float64
+						switch v := fillValue.(type) {
+						case float64:
+							fv = v
+						case int:
+							fv = float64(v)
+						case int64:
+							fv = float64(v)
+						}
+						resultVals = append(resultVals, fv)
 						valid = append(valid, true)
 					} else {
 						resultVals = append(resultVals, typedCol.Value(j))
@@ -456,7 +515,12 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 				var valid []bool
 				for j := 0; j < typedCol.Len(); j++ {
 					if typedCol.IsNull(j) {
-						resultVals = append(resultVals, fillValue.(string))
+						var fv string
+						switch v := fillValue.(type) {
+						case string:
+							fv = v
+						}
+						resultVals = append(resultVals, fv)
 						valid = append(valid, true)
 					} else {
 						resultVals = append(resultVals, typedCol.Value(j))
@@ -464,6 +528,222 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 					}
 				}
 				newCol := series.NewStringSeries(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+
+			case *series.BooleanSeries:
+				var resultVals []bool
+				var valid []bool
+				for j := 0; j < typedCol.Len(); j++ {
+					if typedCol.IsNull(j) {
+						var fv bool
+						switch v := fillValue.(type) {
+						case bool:
+							fv = v
+						}
+						resultVals = append(resultVals, fv)
+						valid = append(valid, true)
+					} else {
+						resultVals = append(resultVals, typedCol.Value(j))
+						valid = append(valid, true)
+					}
+				}
+				newCol := series.NewBooleanSeries(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+			}
+
+		case expr.FillNullForwardExpr:
+			col, err := df.ColByName(e.Expr.(expr.Column).Name)
+			if err != nil {
+				return nil, err
+			}
+
+			switch typedCol := col.(type) {
+			case *series.Int64Series:
+				var resultVals []int64
+				var valid []bool
+				var lastValid int64
+				var hasLast bool
+				for j := 0; j < typedCol.Len(); j++ {
+					if !typedCol.IsNull(j) {
+						resultVals = append(resultVals, typedCol.Value(j))
+						valid = append(valid, true)
+						lastValid = typedCol.Value(j)
+						hasLast = true
+					} else if hasLast {
+						resultVals = append(resultVals, lastValid)
+						valid = append(valid, true)
+					} else {
+						resultVals = append(resultVals, 0)
+						valid = append(valid, false)
+					}
+				}
+				newCol := series.NewInt64Series(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+
+			case *series.Float64Series:
+				var resultVals []float64
+				var valid []bool
+				var lastValid float64
+				var hasLast bool
+				for j := 0; j < typedCol.Len(); j++ {
+					if !typedCol.IsNull(j) {
+						resultVals = append(resultVals, typedCol.Value(j))
+						valid = append(valid, true)
+						lastValid = typedCol.Value(j)
+						hasLast = true
+					} else if hasLast {
+						resultVals = append(resultVals, lastValid)
+						valid = append(valid, true)
+					} else {
+						resultVals = append(resultVals, 0.0)
+						valid = append(valid, false)
+					}
+				}
+				newCol := series.NewFloat64Series(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+
+			case *series.StringSeries:
+				var resultVals []string
+				var valid []bool
+				var lastValid string
+				var hasLast bool
+				for j := 0; j < typedCol.Len(); j++ {
+					if !typedCol.IsNull(j) {
+						resultVals = append(resultVals, typedCol.Value(j))
+						valid = append(valid, true)
+						lastValid = typedCol.Value(j)
+						hasLast = true
+					} else if hasLast {
+						resultVals = append(resultVals, lastValid)
+						valid = append(valid, true)
+					} else {
+						resultVals = append(resultVals, "")
+						valid = append(valid, false)
+					}
+				}
+				newCol := series.NewStringSeries(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+
+			case *series.BooleanSeries:
+				var resultVals []bool
+				var valid []bool
+				var lastValid bool
+				var hasLast bool
+				for j := 0; j < typedCol.Len(); j++ {
+					if !typedCol.IsNull(j) {
+						resultVals = append(resultVals, typedCol.Value(j))
+						valid = append(valid, true)
+						lastValid = typedCol.Value(j)
+						hasLast = true
+					} else if hasLast {
+						resultVals = append(resultVals, lastValid)
+						valid = append(valid, true)
+					} else {
+						resultVals = append(resultVals, false)
+						valid = append(valid, false)
+					}
+				}
+				newCol := series.NewBooleanSeries(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+			}
+
+		case expr.FillNullBackwardExpr:
+			col, err := df.ColByName(e.Expr.(expr.Column).Name)
+			if err != nil {
+				return nil, err
+			}
+
+			switch typedCol := col.(type) {
+			case *series.Int64Series:
+				n := typedCol.Len()
+				resultVals := make([]int64, n)
+				valid := make([]bool, n)
+				var nextValid int64
+				var hasNext bool
+				for j := n - 1; j >= 0; j-- {
+					if !typedCol.IsNull(j) {
+						resultVals[j] = typedCol.Value(j)
+						valid[j] = true
+						nextValid = typedCol.Value(j)
+						hasNext = true
+					} else if hasNext {
+						resultVals[j] = nextValid
+						valid[j] = true
+					} else {
+						resultVals[j] = 0
+						valid[j] = false
+					}
+				}
+				newCol := series.NewInt64Series(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+
+			case *series.Float64Series:
+				n := typedCol.Len()
+				resultVals := make([]float64, n)
+				valid := make([]bool, n)
+				var nextValid float64
+				var hasNext bool
+				for j := n - 1; j >= 0; j-- {
+					if !typedCol.IsNull(j) {
+						resultVals[j] = typedCol.Value(j)
+						valid[j] = true
+						nextValid = typedCol.Value(j)
+						hasNext = true
+					} else if hasNext {
+						resultVals[j] = nextValid
+						valid[j] = true
+					} else {
+						resultVals[j] = 0.0
+						valid[j] = false
+					}
+				}
+				newCol := series.NewFloat64Series(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+
+			case *series.StringSeries:
+				n := typedCol.Len()
+				resultVals := make([]string, n)
+				valid := make([]bool, n)
+				var nextValid string
+				var hasNext bool
+				for j := n - 1; j >= 0; j-- {
+					if !typedCol.IsNull(j) {
+						resultVals[j] = typedCol.Value(j)
+						valid[j] = true
+						nextValid = typedCol.Value(j)
+						hasNext = true
+					} else if hasNext {
+						resultVals[j] = nextValid
+						valid[j] = true
+					} else {
+						resultVals[j] = ""
+						valid[j] = false
+					}
+				}
+				newCol := series.NewStringSeries(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+
+			case *series.BooleanSeries:
+				n := typedCol.Len()
+				resultVals := make([]bool, n)
+				valid := make([]bool, n)
+				var nextValid bool
+				var hasNext bool
+				for j := n - 1; j >= 0; j-- {
+					if !typedCol.IsNull(j) {
+						resultVals[j] = typedCol.Value(j)
+						valid[j] = true
+						nextValid = typedCol.Value(j)
+						hasNext = true
+					} else if hasNext {
+						resultVals[j] = nextValid
+						valid[j] = true
+					} else {
+						resultVals[j] = false
+						valid[j] = false
+					}
+				}
+				newCol := series.NewBooleanSeries(typedCol.Name(), alloc, resultVals, valid)
 				result.AddSeries(newCol)
 			}
 
@@ -562,6 +842,34 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 					}
 				}
 				newCol := series.NewStringSeries(colName, alloc, resultVals, valid)
+				result.AddSeries(newCol)
+
+			case *series.BooleanSeries:
+				var resultVals []bool
+				var valid []bool
+				for j := 0; j < typedCol.Len(); j++ {
+					if !typedCol.IsNull(j) {
+						resultVals = append(resultVals, typedCol.Value(j))
+						valid = append(valid, true)
+					} else {
+						found := false
+						for _, otherCol := range otherCols {
+							if otherColBool, ok := otherCol.(*series.BooleanSeries); ok {
+								if !otherColBool.IsNull(j) {
+									resultVals = append(resultVals, otherColBool.Value(j))
+									valid = append(valid, true)
+									found = true
+									break
+								}
+							}
+						}
+						if !found {
+							resultVals = append(resultVals, false)
+							valid = append(valid, false)
+						}
+					}
+				}
+				newCol := series.NewBooleanSeries(colName, alloc, resultVals, valid)
 				result.AddSeries(newCol)
 			}
 
@@ -683,6 +991,196 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 			newCol := series.NewStringSeries(strCol.Name(), alloc, resultVals, valid)
 			result.AddSeries(newCol)
 
+		case expr.LengthExpr:
+			col, err := df.ColByName(e.Expr.(expr.Column).Name)
+			if err != nil {
+				return nil, err
+			}
+			strCol, ok := col.(*series.StringSeries)
+			if !ok {
+				return nil, errors.New("Length requires string column")
+			}
+			var lenVals []int64
+			var lenValid []bool
+			for j := 0; j < strCol.Len(); j++ {
+				if strCol.IsNull(j) {
+					lenVals = append(lenVals, 0)
+					lenValid = append(lenValid, false)
+				} else {
+					lenVals = append(lenVals, int64(len(strCol.Value(j))))
+					lenValid = append(lenValid, true)
+				}
+			}
+			lenCol := series.NewInt64Series(strCol.Name(), alloc, lenVals, lenValid)
+			result.AddSeries(lenCol)
+
+		case expr.TrimExpr:
+			col, err := df.ColByName(e.Expr.(expr.Column).Name)
+			if err != nil {
+				return nil, err
+			}
+			strCol, ok := col.(*series.StringSeries)
+			if !ok {
+				return nil, errors.New("Trim requires string column")
+			}
+			var trimVals []string
+			var trimValid []bool
+			for j := 0; j < strCol.Len(); j++ {
+				if strCol.IsNull(j) {
+					trimVals = append(trimVals, "")
+					trimValid = append(trimValid, false)
+				} else {
+					trimVals = append(trimVals, strings.Trim(strCol.Value(j), " \t\n"))
+					trimValid = append(trimValid, true)
+				}
+			}
+			trimCol := series.NewStringSeries(strCol.Name(), alloc, trimVals, trimValid)
+			result.AddSeries(trimCol)
+
+		case expr.LPadExpr:
+			col, err := df.ColByName(e.Expr.(expr.Column).Name)
+			if err != nil {
+				return nil, err
+			}
+			strCol, ok := col.(*series.StringSeries)
+			if !ok {
+				return nil, errors.New("LPad requires string column")
+			}
+			targetLen := e.Length.(expr.Literal).Value.(int)
+			var lpadVals []string
+			var lpadValid []bool
+			for j := 0; j < strCol.Len(); j++ {
+				if strCol.IsNull(j) {
+					lpadVals = append(lpadVals, "")
+					lpadValid = append(lpadValid, false)
+				} else {
+					s := strCol.Value(j)
+					if len(s) < targetLen {
+						s = strings.Repeat(" ", targetLen-len(s)) + s
+					}
+					lpadVals = append(lpadVals, s)
+					lpadValid = append(lpadValid, true)
+				}
+			}
+			lpadCol := series.NewStringSeries(strCol.Name(), alloc, lpadVals, lpadValid)
+			result.AddSeries(lpadCol)
+
+		case expr.RPadExpr:
+			col, err := df.ColByName(e.Expr.(expr.Column).Name)
+			if err != nil {
+				return nil, err
+			}
+			strCol, ok := col.(*series.StringSeries)
+			if !ok {
+				return nil, errors.New("RPad requires string column")
+			}
+			targetLen := e.Length.(expr.Literal).Value.(int)
+			var rpadVals []string
+			var rpadValid []bool
+			for j := 0; j < strCol.Len(); j++ {
+				if strCol.IsNull(j) {
+					rpadVals = append(rpadVals, "")
+					rpadValid = append(rpadValid, false)
+				} else {
+					s := strCol.Value(j)
+					if len(s) < targetLen {
+						s = s + strings.Repeat(" ", targetLen-len(s))
+					}
+					rpadVals = append(rpadVals, s)
+					rpadValid = append(rpadValid, true)
+				}
+			}
+			rpadCol := series.NewStringSeries(strCol.Name(), alloc, rpadVals, rpadValid)
+			result.AddSeries(rpadCol)
+
+		case expr.ContainsRegexExpr:
+			col, err := df.ColByName(e.Expr.(expr.Column).Name)
+			if err != nil {
+				return nil, err
+			}
+			strCol, ok := col.(*series.StringSeries)
+			if !ok {
+				return nil, errors.New("ContainsRegex requires string column")
+			}
+			pattern := e.Pattern.(expr.Literal).Value.(string)
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return nil, err
+			}
+			var regexVals []string
+			var regexValid []bool
+			for j := 0; j < strCol.Len(); j++ {
+				if strCol.IsNull(j) {
+					regexVals = append(regexVals, "")
+					regexValid = append(regexValid, false)
+				} else {
+					regexVals = append(regexVals, strconv.FormatBool(re.MatchString(strCol.Value(j))))
+					regexValid = append(regexValid, true)
+				}
+			}
+			regexCol := series.NewStringSeries("contains_regex", alloc, regexVals, regexValid)
+			result.AddSeries(regexCol)
+
+		case expr.SliceExpr:
+			col, err := df.ColByName(e.Expr.(expr.Column).Name)
+			if err != nil {
+				return nil, err
+			}
+			strCol, ok := col.(*series.StringSeries)
+			if !ok {
+				return nil, errors.New("Slice requires string column")
+			}
+			start := e.Start.(expr.Literal).Value.(int)
+			length := e.Length.(expr.Literal).Value.(int)
+			var sliceVals []string
+			var sliceValid []bool
+			for j := 0; j < strCol.Len(); j++ {
+				if strCol.IsNull(j) {
+					sliceVals = append(sliceVals, "")
+					sliceValid = append(sliceValid, false)
+				} else {
+					s := strCol.Value(j)
+					if start < len(s) {
+						end := start + length
+						if end > len(s) {
+							end = len(s)
+						}
+						sliceVals = append(sliceVals, s[start:end])
+						sliceValid = append(sliceValid, true)
+					} else {
+						sliceVals = append(sliceVals, "")
+						sliceValid = append(sliceValid, false)
+					}
+				}
+			}
+			sliceCol := series.NewStringSeries(strCol.Name(), alloc, sliceVals, sliceValid)
+			result.AddSeries(sliceCol)
+
+		case expr.SplitExpr:
+			col, err := df.ColByName(e.Expr.(expr.Column).Name)
+			if err != nil {
+				return nil, err
+			}
+			strCol, ok := col.(*series.StringSeries)
+			if !ok {
+				return nil, errors.New("Split requires string column")
+			}
+			delim := e.Delim.(expr.Literal).Value.(string)
+			var splitVals []string
+			var splitValid []bool
+			for j := 0; j < strCol.Len(); j++ {
+				if strCol.IsNull(j) {
+					splitVals = append(splitVals, "")
+					splitValid = append(splitValid, false)
+				} else {
+					parts := strings.Split(strCol.Value(j), delim)
+					splitVals = append(splitVals, strings.Join(parts, "|"))
+					splitValid = append(splitValid, true)
+				}
+			}
+			splitCol := series.NewStringSeries(strCol.Name(), alloc, splitVals, splitValid)
+			result.AddSeries(splitCol)
+
 		case expr.CastExpr:
 			col, err := df.ColByName(e.Expr.(expr.Column).Name)
 			if err != nil {
@@ -789,12 +1287,17 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 			}
 
 		case expr.OtherwiseExpr:
-			col, err := df.ColByName(e.ThenExpr.WhenExpr.Condition.(expr.Column).Name)
+			mask, err := evaluateCondition(df, e.ThenExpr.WhenExpr.Condition)
 			if err != nil {
 				return nil, err
 			}
 			thenVal := e.ThenExpr.Value.(expr.Literal).Value
 			elseVal := e.Otherwise.(expr.Literal).Value
+
+			col, err := df.Col(0)
+			if err != nil {
+				return nil, err
+			}
 
 			switch typedCol := col.(type) {
 			case *series.Int64Series:
@@ -814,13 +1317,12 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 					elseInt = v
 				}
 				for j := 0; j < typedCol.Len(); j++ {
-					if typedCol.IsNull(j) {
-						resultVals = append(resultVals, elseInt)
-						valid = append(valid, true)
-					} else {
+					if mask[j] {
 						resultVals = append(resultVals, thenInt)
-						valid = append(valid, true)
+					} else {
+						resultVals = append(resultVals, elseInt)
 					}
+					valid = append(valid, true)
 				}
 				newCol := series.NewInt64Series(typedCol.Name(), alloc, resultVals, valid)
 				result.AddSeries(newCol)
@@ -846,13 +1348,12 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 					elseFloat = float64(v)
 				}
 				for j := 0; j < typedCol.Len(); j++ {
-					if typedCol.IsNull(j) {
-						resultVals = append(resultVals, elseFloat)
-						valid = append(valid, true)
-					} else {
+					if mask[j] {
 						resultVals = append(resultVals, thenFloat)
-						valid = append(valid, true)
+					} else {
+						resultVals = append(resultVals, elseFloat)
 					}
+					valid = append(valid, true)
 				}
 				newCol := series.NewFloat64Series(typedCol.Name(), alloc, resultVals, valid)
 				result.AddSeries(newCol)
@@ -863,15 +1364,37 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 				thenStr, _ := thenVal.(string)
 				elseStr, _ := elseVal.(string)
 				for j := 0; j < typedCol.Len(); j++ {
-					if typedCol.IsNull(j) {
-						resultVals = append(resultVals, elseStr)
-						valid = append(valid, true)
-					} else {
+					if mask[j] {
 						resultVals = append(resultVals, thenStr)
-						valid = append(valid, true)
+					} else {
+						resultVals = append(resultVals, elseStr)
 					}
+					valid = append(valid, true)
 				}
 				newCol := series.NewStringSeries(typedCol.Name(), alloc, resultVals, valid)
+				result.AddSeries(newCol)
+
+			case *series.BooleanSeries:
+				var resultVals []bool
+				var valid []bool
+				var thenBool, elseBool bool
+				switch v := thenVal.(type) {
+				case bool:
+					thenBool = v
+				}
+				switch v := elseVal.(type) {
+				case bool:
+					elseBool = v
+				}
+				for j := 0; j < typedCol.Len(); j++ {
+					if mask[j] {
+						resultVals = append(resultVals, thenBool)
+					} else {
+						resultVals = append(resultVals, elseBool)
+					}
+					valid = append(valid, true)
+				}
+				newCol := series.NewBooleanSeries(typedCol.Name(), alloc, resultVals, valid)
 				result.AddSeries(newCol)
 			}
 
@@ -926,6 +1449,156 @@ func applyDistinct(df *dataframe.DataFrame) (*dataframe.DataFrame, error) {
 		col, _ := df.Col(i)
 		newCol := copySeriesByIndices(col, keepIndices, alloc)
 		result.AddSeries(newCol)
+	}
+
+	return result, nil
+}
+
+func applyWindow(df *dataframe.DataFrame, windowFunc expr.WindowExpr, partBy []string, orderBy []string) (*dataframe.DataFrame, error) {
+	result := dataframe.New()
+	alloc := memory.DefaultAllocator
+
+	for i := 0; i < df.NumCols(); i++ {
+		col, _ := df.Col(i)
+		result.AddSeries(col)
+	}
+
+	var resultCol series.Series
+
+	switch windowFunc.Func {
+	case expr.FuncRowNumber:
+		rowNumbers := make([]int64, df.NumRows())
+		for i := 0; i < df.NumRows(); i++ {
+			rowNumbers[i] = int64(i + 1)
+		}
+		resultCol = series.NewInt64Series("row_number", alloc, rowNumbers, nil)
+
+	case expr.FuncRank:
+		ranks := make([]int64, df.NumRows())
+		for i := 0; i < df.NumRows(); i++ {
+			ranks[i] = int64(i + 1)
+		}
+		resultCol = series.NewInt64Series("rank", alloc, ranks, nil)
+
+	case expr.FuncLag:
+		if windowFunc.Expr != nil {
+			if colExpr, ok := windowFunc.Expr.(expr.Column); ok {
+				col, err := df.ColByName(colExpr.Name)
+				if err != nil {
+					return nil, err
+				}
+				offset := windowFunc.Offset
+				if offset == 0 {
+					offset = 1
+				}
+
+				switch typedCol := col.(type) {
+				case *series.Int64Series:
+					values := make([]int64, df.NumRows())
+					valid := make([]bool, df.NumRows())
+					for i := 0; i < df.NumRows(); i++ {
+						if i >= offset {
+							values[i] = typedCol.Value(i - offset)
+							valid[i] = !typedCol.IsNull(i - offset)
+						} else {
+							values[i] = 0
+							valid[i] = false
+						}
+					}
+					resultCol = series.NewInt64Series("lag", alloc, values, valid)
+
+				case *series.Float64Series:
+					values := make([]float64, df.NumRows())
+					valid := make([]bool, df.NumRows())
+					for i := 0; i < df.NumRows(); i++ {
+						if i >= offset {
+							values[i] = typedCol.Value(i - offset)
+							valid[i] = !typedCol.IsNull(i - offset)
+						} else {
+							values[i] = 0
+							valid[i] = false
+						}
+					}
+					resultCol = series.NewFloat64Series("lag", alloc, values, valid)
+
+				case *series.StringSeries:
+					values := make([]string, df.NumRows())
+					valid := make([]bool, df.NumRows())
+					for i := 0; i < df.NumRows(); i++ {
+						if i >= offset {
+							values[i] = typedCol.Value(i - offset)
+							valid[i] = !typedCol.IsNull(i - offset)
+						} else {
+							values[i] = ""
+							valid[i] = false
+						}
+					}
+					resultCol = series.NewStringSeries("lag", alloc, values, valid)
+				}
+			}
+		}
+
+	case expr.FuncLead:
+		if windowFunc.Expr != nil {
+			if colExpr, ok := windowFunc.Expr.(expr.Column); ok {
+				col, err := df.ColByName(colExpr.Name)
+				if err != nil {
+					return nil, err
+				}
+				offset := windowFunc.Offset
+				if offset == 0 {
+					offset = 1
+				}
+
+				switch typedCol := col.(type) {
+				case *series.Int64Series:
+					values := make([]int64, df.NumRows())
+					valid := make([]bool, df.NumRows())
+					for i := 0; i < df.NumRows(); i++ {
+						if i+offset < df.NumRows() {
+							values[i] = typedCol.Value(i + offset)
+							valid[i] = !typedCol.IsNull(i + offset)
+						} else {
+							values[i] = 0
+							valid[i] = false
+						}
+					}
+					resultCol = series.NewInt64Series("lead", alloc, values, valid)
+
+				case *series.Float64Series:
+					values := make([]float64, df.NumRows())
+					valid := make([]bool, df.NumRows())
+					for i := 0; i < df.NumRows(); i++ {
+						if i+offset < df.NumRows() {
+							values[i] = typedCol.Value(i + offset)
+							valid[i] = !typedCol.IsNull(i + offset)
+						} else {
+							values[i] = 0
+							valid[i] = false
+						}
+					}
+					resultCol = series.NewFloat64Series("lead", alloc, values, valid)
+
+				case *series.StringSeries:
+					values := make([]string, df.NumRows())
+					valid := make([]bool, df.NumRows())
+					for i := 0; i < df.NumRows(); i++ {
+						if i+offset < df.NumRows() {
+							values[i] = typedCol.Value(i + offset)
+							valid[i] = !typedCol.IsNull(i + offset)
+						} else {
+							values[i] = ""
+							valid[i] = false
+						}
+					}
+					resultCol = series.NewStringSeries("lead", alloc, values, valid)
+				}
+			}
+		}
+	}
+
+	if resultCol != nil {
+		result.AddSeries(resultCol)
 	}
 
 	return result, nil

@@ -1,6 +1,7 @@
 package dataframe
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -80,6 +81,10 @@ func (lf *LazyFrame) Explain() string {
 
 func (lf *LazyFrame) Plan() LogicalPlan {
 	return lf.plan
+}
+
+func (lf *LazyFrame) Collect() (*DataFrame, error) {
+	return nil, errors.New("use engine.Execute(lf.Plan()) to collect the lazy frame")
 }
 
 type GroupByPlan struct {
@@ -166,6 +171,63 @@ func (lf *LazyFrame) Limit(n int) *LazyFrame {
 	}
 }
 
+func (lf *LazyFrame) Head(n int) *LazyFrame {
+	return lf.Limit(n)
+}
+
+func (lf *LazyFrame) Tail(n int) *LazyFrame {
+	return &LazyFrame{
+		plan: TailPlan{
+			Input: lf.plan,
+			N:     n,
+		},
+	}
+}
+
+type TailPlan struct {
+	Input LogicalPlan
+	N     int
+}
+
+func (t TailPlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	inputStr := t.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sTail: %d\n%s", pad, t.N, inputStr)
+}
+
+type SamplePlan struct {
+	Input   LogicalPlan
+	N       int
+	Frac    float64
+	Replace bool
+}
+
+func (s SamplePlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	inputStr := s.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sSample: n=%d, frac=%.2f, replace=%t\n%s", pad, s.N, s.Frac, s.Replace, inputStr)
+}
+
+func (lf *LazyFrame) Sample(n int, replace bool) *LazyFrame {
+	return &LazyFrame{
+		plan: SamplePlan{
+			Input:   lf.plan,
+			N:       n,
+			Replace: replace,
+		},
+	}
+}
+
+func (lf *LazyFrame) SampleFrac(frac float64, replace bool) *LazyFrame {
+	return &LazyFrame{
+		plan: SamplePlan{
+			Input:   lf.plan,
+			Frac:    frac,
+			Replace: replace,
+		},
+	}
+}
+
 type JoinType string
 
 const (
@@ -177,17 +239,22 @@ const (
 )
 
 type JoinPlan struct {
-	Left  LogicalPlan
-	Right LogicalPlan
-	On    string
-	How   JoinType
+	Left   LogicalPlan
+	Right  LogicalPlan
+	On     string
+	OnCols []string
+	How    JoinType
 }
 
 func (j JoinPlan) Explain(indent int) string {
 	pad := strings.Repeat("  ", indent)
 	leftStr := j.Left.Explain(indent + 1)
 	rightStr := j.Right.Explain(indent + 1)
-	return fmt.Sprintf("%sJoin: %s on '%s'\n%s%s", pad, j.How, j.On, leftStr, rightStr)
+	onStr := j.On
+	if len(j.OnCols) > 0 {
+		onStr = "[" + strings.Join(j.OnCols, ", ") + "]"
+	}
+	return fmt.Sprintf("%sJoin: %s on '%s'\n%s%s", pad, j.How, onStr, leftStr, rightStr)
 }
 
 func (lf *LazyFrame) Join(other *LazyFrame, on string, how JoinType) *LazyFrame {
@@ -197,6 +264,17 @@ func (lf *LazyFrame) Join(other *LazyFrame, on string, how JoinType) *LazyFrame 
 			Right: other.plan,
 			On:    on,
 			How:   how,
+		},
+	}
+}
+
+func (lf *LazyFrame) JoinOn(other *LazyFrame, onCols []string, how JoinType) *LazyFrame {
+	return &LazyFrame{
+		plan: JoinPlan{
+			Left:   lf.plan,
+			Right:  other.plan,
+			OnCols: onCols,
+			How:    how,
 		},
 	}
 }
@@ -263,4 +341,28 @@ func (lf *LazyFrame) Distinct() *LazyFrame {
 
 func (lf *LazyFrame) Unique() *LazyFrame {
 	return lf.Distinct()
+}
+
+type WindowPlan struct {
+	Input   LogicalPlan
+	Func    expr.WindowExpr
+	PartBy  []string
+	OrderBy []string
+}
+
+func (w WindowPlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	inputStr := w.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sWindow: %s\n%s", pad, w.Func.String(), inputStr)
+}
+
+func (lf *LazyFrame) WithWindow(funcExpr expr.WindowExpr, partBy []string, orderBy []string) *LazyFrame {
+	return &LazyFrame{
+		plan: WindowPlan{
+			Input:   lf.plan,
+			Func:    funcExpr,
+			PartBy:  partBy,
+			OrderBy: orderBy,
+		},
+	}
 }
