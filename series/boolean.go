@@ -1,18 +1,17 @@
 package series
 
 import (
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/memory"
+	grizzarrows "github.com/ecelayes/grizz/internal/arrow"
+	grizzmemory "github.com/ecelayes/grizz/internal/memory"
 )
 
 type BooleanSeries struct {
 	name string
-	data *array.Boolean
+	data *grizzarrows.BooleanArray
 }
 
-func NewBooleanSeries(name string, mem memory.Allocator, values []bool, valid []bool) *BooleanSeries {
-	builder := array.NewBooleanBuilder(mem)
+func NewBooleanSeries(name string, mem grizzmemory.Allocator, values []bool, valid []bool) *BooleanSeries {
+	builder := grizzarrows.NewBooleanBuilder(mem)
 	defer builder.Release()
 
 	builder.AppendValues(values, valid)
@@ -27,7 +26,7 @@ func (s *BooleanSeries) Name() string {
 	return s.name
 }
 
-func (s *BooleanSeries) Type() arrow.DataType {
+func (s *BooleanSeries) Type() grizzarrows.DataType {
 	return s.data.DataType()
 }
 

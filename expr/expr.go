@@ -22,6 +22,22 @@ func (c Column) Gt(other Expr) BinaryOp {
 	return BinaryOp{Left: c, Op: ">", Right: other}
 }
 
+func (c Column) Lt(other Expr) BinaryOp {
+	return BinaryOp{Left: c, Op: "<", Right: other}
+}
+
+func (c Column) LtEq(other Expr) BinaryOp {
+	return BinaryOp{Left: c, Op: "<=", Right: other}
+}
+
+func (c Column) GtEq(other Expr) BinaryOp {
+	return BinaryOp{Left: c, Op: ">=", Right: other}
+}
+
+func (c Column) Ne(other Expr) BinaryOp {
+	return BinaryOp{Left: c, Op: "!=", Right: other}
+}
+
 type Literal struct {
 	Value any
 }
@@ -45,10 +61,79 @@ func (b BinaryOp) String() string {
 	return fmt.Sprintf("(%s %s %s)", b.Left.String(), b.Op, b.Right.String())
 }
 
+type LogicalOp struct {
+	Left  Expr
+	Op    string
+	Right Expr
+}
+
+func (l LogicalOp) String() string {
+	return fmt.Sprintf("(%s %s %s)", l.Left.String(), l.Op, l.Right.String())
+}
+
+type NotOp struct {
+	Expr Expr
+}
+
+func (n NotOp) String() string {
+	return fmt.Sprintf("Not(%s)", n.Expr.String())
+}
+
+func And(left, right Expr) LogicalOp {
+	return LogicalOp{Left: left, Op: "And", Right: right}
+}
+
+func Or(left, right Expr) LogicalOp {
+	return LogicalOp{Left: left, Op: "Or", Right: right}
+}
+
+func Not(e Expr) NotOp {
+	return NotOp{Expr: e}
+}
+
 func Col(name string) Column {
 	return Column{Name: name}
 }
 
 func Lit(value any) Literal {
 	return Literal{Value: value}
+}
+
+type AliasExpr struct {
+	Expr  Expr
+	Alias string
+}
+
+func (a AliasExpr) String() string {
+	return fmt.Sprintf("%s AS %s", a.Expr.String(), a.Alias)
+}
+
+func Alias(expr Expr, name string) AliasExpr {
+	return AliasExpr{Expr: expr, Alias: name}
+}
+
+type ArithmeticOp struct {
+	Left  Expr
+	Op    string
+	Right Expr
+}
+
+func (a ArithmeticOp) String() string {
+	return fmt.Sprintf("(%s %s %s)", a.Left.String(), a.Op, a.Right.String())
+}
+
+func (c Column) Add(other Expr) ArithmeticOp {
+	return ArithmeticOp{Left: c, Op: "+", Right: other}
+}
+
+func (c Column) Sub(other Expr) ArithmeticOp {
+	return ArithmeticOp{Left: c, Op: "-", Right: other}
+}
+
+func (c Column) Mul(other Expr) ArithmeticOp {
+	return ArithmeticOp{Left: c, Op: "*", Right: other}
+}
+
+func (c Column) Div(other Expr) ArithmeticOp {
+	return ArithmeticOp{Left: c, Op: "/", Right: other}
 }

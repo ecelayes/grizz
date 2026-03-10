@@ -1,0 +1,53 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+grizz
+grizz.exe
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+*.cover
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output directories
+/bin/
+/dist/
+/build/
+
+# Log files
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Data files (keep sample CSVs)
+*.csv
+!data.csv
+!departments.csv
+*.json
+*.parquet
+output.csv
+output.json

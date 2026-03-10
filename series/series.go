@@ -1,14 +1,13 @@
 package series
 
 import (
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/memory"
+	grizzarrows "github.com/ecelayes/grizz/internal/arrow"
+	grizzmemory "github.com/ecelayes/grizz/internal/memory"
 )
 
 type Series interface {
 	Name() string
-	Type() arrow.DataType
+	Type() grizzarrows.DataType
 	Len() int
 	IsNull(i int) bool
 	Release()
@@ -16,11 +15,11 @@ type Series interface {
 
 type Float64Series struct {
 	name string
-	data *array.Float64
+	data *grizzarrows.Float64Array
 }
 
-func NewFloat64Series(name string, mem memory.Allocator, values []float64, valid []bool) *Float64Series {
-	builder := array.NewFloat64Builder(mem)
+func NewFloat64Series(name string, mem grizzmemory.Allocator, values []float64, valid []bool) *Float64Series {
+	builder := grizzarrows.NewFloat64Builder(mem)
 	defer builder.Release()
 
 	builder.AppendValues(values, valid)
@@ -35,7 +34,7 @@ func (s *Float64Series) Name() string {
 	return s.name
 }
 
-func (s *Float64Series) Type() arrow.DataType {
+func (s *Float64Series) Type() grizzarrows.DataType {
 	return s.data.DataType()
 }
 
@@ -55,4 +54,67 @@ func (s *Float64Series) Release() {
 	if s.data != nil {
 		s.data.Release()
 	}
+}
+
+func (s *Float64Series) Sum() float64 {
+	var sum float64
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			sum += s.Value(i)
+		}
+	}
+	return sum
+}
+
+func (s *Float64Series) Mean() float64 {
+	var sum float64
+	count := 0
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			sum += s.Value(i)
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+	return sum / float64(count)
+}
+
+func (s *Float64Series) Min() float64 {
+	var min float64 = 0
+	first := true
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			if first || s.Value(i) < min {
+				min = s.Value(i)
+				first = false
+			}
+		}
+	}
+	return min
+}
+
+func (s *Float64Series) Max() float64 {
+	var max float64 = 0
+	first := true
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			if first || s.Value(i) > max {
+				max = s.Value(i)
+				first = false
+			}
+		}
+	}
+	return max
+}
+
+func (s *Float64Series) Count() int {
+	count := 0
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) {
+			count++
+		}
+	}
+	return count
 }

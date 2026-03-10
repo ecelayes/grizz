@@ -48,7 +48,7 @@ func Read(filePath string) (*dataframe.DataFrame, error) {
 	}
 
 	df := dataframe.New()
-	alloc := memory.DefaultAllocator()
+	alloc := memory.DefaultAllocator
 
 	for colIdx := 0; colIdx < numCols; colIdx++ {
 		colName := headers[colIdx]

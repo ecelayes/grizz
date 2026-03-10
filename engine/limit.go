@@ -17,7 +17,7 @@ func applyLimit(df *dataframe.DataFrame, limit int) (*dataframe.DataFrame, error
 	}
 
 	result := dataframe.New()
-	alloc := memory.DefaultAllocator()
+	alloc := memory.DefaultAllocator
 
 	for i := 0; i < df.NumCols(); i++ {
 		col, _ := df.Col(i)

@@ -171,6 +171,9 @@ type JoinType string
 const (
 	Inner JoinType = "Inner"
 	Left  JoinType = "Left"
+	Right JoinType = "Right"
+	Outer JoinType = "Outer"
+	Cross JoinType = "Cross"
 )
 
 type JoinPlan struct {
@@ -196,4 +199,68 @@ func (lf *LazyFrame) Join(other *LazyFrame, on string, how JoinType) *LazyFrame 
 			How:   how,
 		},
 	}
+}
+
+type WithColumnsPlan struct {
+	Input   LogicalPlan
+	Columns []expr.Expr
+}
+
+func (w WithColumnsPlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	var cols []string
+	for _, c := range w.Columns {
+		cols = append(cols, c.String())
+	}
+	inputStr := w.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sWithColumns: %s\n%s", pad, strings.Join(cols, ", "), inputStr)
+}
+
+func (lf *LazyFrame) WithColumns(columns ...expr.Expr) *LazyFrame {
+	return &LazyFrame{
+		plan: WithColumnsPlan{
+			Input:   lf.plan,
+			Columns: columns,
+		},
+	}
+}
+
+type DropNullsPlan struct {
+	Input LogicalPlan
+}
+
+func (d DropNullsPlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	inputStr := d.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sDropNulls\n%s", pad, inputStr)
+}
+
+func (lf *LazyFrame) DropNulls() *LazyFrame {
+	return &LazyFrame{
+		plan: DropNullsPlan{
+			Input: lf.plan,
+		},
+	}
+}
+
+type DistinctPlan struct {
+	Input LogicalPlan
+}
+
+func (d DistinctPlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	inputStr := d.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sDistinct\n%s", pad, inputStr)
+}
+
+func (lf *LazyFrame) Distinct() *LazyFrame {
+	return &LazyFrame{
+		plan: DistinctPlan{
+			Input: lf.plan,
+		},
+	}
+}
+
+func (lf *LazyFrame) Unique() *LazyFrame {
+	return lf.Distinct()
 }

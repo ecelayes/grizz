@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"sort"
 
 	"github.com/ecelayes/grizz/dataframe"
 	"github.com/ecelayes/grizz/expr"
@@ -32,7 +33,7 @@ func applyGroupBy(df *dataframe.DataFrame, keys []string, aggs []expr.Aggregatio
 		}
 	}
 
-	alloc := memory.DefaultAllocator()
+	alloc := memory.DefaultAllocator
 	result := dataframe.New()
 
 	var outKeys []string
@@ -59,17 +60,18 @@ func applyGroupBy(df *dataframe.DataFrame, keys []string, aggs []expr.Aggregatio
 			var outVals []float64
 			for _, key := range outKeys {
 				indices := groups[key]
-				val := calculateAggFloat(typedAggCol, indices, agg.Func)
+				val := calculateAggFloat(typedAggCol, indices, agg.Func, agg.Param)
 				outVals = append(outVals, val)
 			}
 			result.AddSeries(series.NewFloat64Series(aggName, alloc, outVals, nil))
 
 		case *series.Int64Series:
-			if agg.Func == expr.MeanAgg {
+			if agg.Func == expr.MeanAgg || agg.Func == expr.StdAgg || agg.Func == expr.VarAgg ||
+				agg.Func == expr.MedianAgg || agg.Func == expr.QuantileAgg {
 				var outVals []float64
 				for _, key := range outKeys {
 					indices := groups[key]
-					val := calculateAggIntToFloat(typedAggCol, indices, agg.Func)
+					val := calculateAggIntToFloat(typedAggCol, indices, agg.Func, agg.Param)
 					outVals = append(outVals, val)
 				}
 				result.AddSeries(series.NewFloat64Series(aggName, alloc, outVals, nil))
@@ -90,7 +92,11 @@ func applyGroupBy(df *dataframe.DataFrame, keys []string, aggs []expr.Aggregatio
 	return result, nil
 }
 
-func calculateAggFloat(col *series.Float64Series, indices []int, aggFunc expr.AggFunc) float64 {
+func calculateAggFloat(col *series.Float64Series, indices []int, aggFunc expr.AggFunc, param float64) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+
 	switch aggFunc {
 	case expr.SumAgg:
 		var sum float64
@@ -103,14 +109,83 @@ func calculateAggFloat(col *series.Float64Series, indices []int, aggFunc expr.Ag
 		for _, idx := range indices {
 			sum += col.Value(idx)
 		}
-		if len(indices) == 0 {
-			return 0
-		}
 		return sum / float64(len(indices))
 	case expr.CountAgg:
 		return float64(len(indices))
+	case expr.MinAgg:
+		minVal := col.Value(indices[0])
+		for _, idx := range indices[1:] {
+			v := col.Value(idx)
+			if v < minVal {
+				minVal = v
+			}
+		}
+		return minVal
+	case expr.MaxAgg:
+		maxVal := col.Value(indices[0])
+		for _, idx := range indices[1:] {
+			v := col.Value(idx)
+			if v > maxVal {
+				maxVal = v
+			}
+		}
+		return maxVal
+	case expr.StdAgg:
+		return sqrt(popVarianceFloat(col, indices))
+	case expr.VarAgg:
+		return popVarianceFloat(col, indices)
+	case expr.MedianAgg:
+		return quantileFloat(col, indices, 0.5)
+	case expr.QuantileAgg:
+		return quantileFloat(col, indices, param)
 	}
 	return 0
+}
+
+func popVarianceFloat(col *series.Float64Series, indices []int) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, idx := range indices {
+		sum += col.Value(idx)
+	}
+	mean := sum / float64(len(indices))
+
+	var variance float64
+	for _, idx := range indices {
+		diff := col.Value(idx) - mean
+		variance += diff * diff
+	}
+	return variance / float64(len(indices))
+}
+
+func quantileFloat(col *series.Float64Series, indices []int, q float64) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+	values := make([]float64, len(indices))
+	for i, idx := range indices {
+		values[i] = col.Value(idx)
+	}
+	sort.Float64s(values)
+
+	pos := q * float64(len(values)-1)
+	lower := int(pos)
+	upper := lower + 1
+	if upper >= len(values) {
+		return values[lower]
+	}
+	weight := pos - float64(lower)
+	return values[lower]*(1-weight) + values[upper]*weight
+}
+
+func sqrt(x float64) float64 {
+	z := 1.0
+	for i := 0; i < 20; i++ {
+		z = (z + x/z) / 2
+	}
+	return z
 }
 
 func calculateAggInt(col *series.Int64Series, indices []int, aggFunc expr.AggFunc) int64 {
@@ -123,20 +198,92 @@ func calculateAggInt(col *series.Int64Series, indices []int, aggFunc expr.AggFun
 		return sum
 	case expr.CountAgg:
 		return int64(len(indices))
+	case expr.MinAgg:
+		if len(indices) == 0 {
+			return 0
+		}
+		minVal := col.Value(indices[0])
+		for _, idx := range indices[1:] {
+			v := col.Value(idx)
+			if v < minVal {
+				minVal = v
+			}
+		}
+		return minVal
+	case expr.MaxAgg:
+		if len(indices) == 0 {
+			return 0
+		}
+		maxVal := col.Value(indices[0])
+		for _, idx := range indices[1:] {
+			v := col.Value(idx)
+			if v > maxVal {
+				maxVal = v
+			}
+		}
+		return maxVal
 	}
 	return 0
 }
 
-func calculateAggIntToFloat(col *series.Int64Series, indices []int, aggFunc expr.AggFunc) float64 {
-	if aggFunc == expr.MeanAgg {
+func calculateAggIntToFloat(col *series.Int64Series, indices []int, aggFunc expr.AggFunc, param float64) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+
+	switch aggFunc {
+	case expr.MeanAgg:
 		var sum float64
 		for _, idx := range indices {
 			sum += float64(col.Value(idx))
 		}
-		if len(indices) == 0 {
-			return 0
-		}
 		return sum / float64(len(indices))
+	case expr.StdAgg:
+		return sqrt(popVarianceInt(col, indices))
+	case expr.VarAgg:
+		return popVarianceInt(col, indices)
+	case expr.MedianAgg:
+		return quantileInt(col, indices, 0.5)
+	case expr.QuantileAgg:
+		return quantileInt(col, indices, param)
 	}
 	return 0
+}
+
+func popVarianceInt(col *series.Int64Series, indices []int) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, idx := range indices {
+		sum += float64(col.Value(idx))
+	}
+	mean := sum / float64(len(indices))
+
+	var variance float64
+	for _, idx := range indices {
+		diff := float64(col.Value(idx)) - mean
+		variance += diff * diff
+	}
+	return variance / float64(len(indices))
+}
+
+func quantileInt(col *series.Int64Series, indices []int, q float64) float64 {
+	if len(indices) == 0 {
+		return 0
+	}
+	values := make([]float64, len(indices))
+	for i, idx := range indices {
+		values[i] = float64(col.Value(idx))
+	}
+	sort.Float64s(values)
+
+	pos := q * float64(len(values)-1)
+	lower := int(pos)
+	upper := lower + 1
+	if upper >= len(values) {
+		return values[lower]
+	}
+	weight := pos - float64(lower)
+	return values[lower]*(1-weight) + values[upper]*weight
 }

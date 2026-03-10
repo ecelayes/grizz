@@ -4,10 +4,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-type Allocator interface {
-	memory.Allocator
-}
+type Allocator = memory.Allocator
 
-func DefaultAllocator() Allocator {
-	return memory.NewGoAllocator()
-}
+var DefaultAllocator Allocator = memory.NewGoAllocator()

@@ -5,17 +5,27 @@ import "fmt"
 type AggFunc string
 
 const (
-	SumAgg   AggFunc = "Sum"
-	MeanAgg  AggFunc = "Mean"
-	CountAgg AggFunc = "Count"
+	SumAgg      AggFunc = "Sum"
+	MeanAgg     AggFunc = "Mean"
+	CountAgg    AggFunc = "Count"
+	MinAgg      AggFunc = "Min"
+	MaxAgg      AggFunc = "Max"
+	StdAgg      AggFunc = "Std"
+	VarAgg      AggFunc = "Var"
+	MedianAgg   AggFunc = "Median"
+	QuantileAgg AggFunc = "Quantile"
 )
 
 type Aggregation struct {
-	Func AggFunc
-	Expr Expr
+	Func  AggFunc
+	Expr  Expr
+	Param float64
 }
 
 func (a Aggregation) String() string {
+	if a.Func == QuantileAgg {
+		return fmt.Sprintf("%s(%s, %.2f)", a.Func, a.Expr.String(), a.Param)
+	}
 	return fmt.Sprintf("%s(%s)", a.Func, a.Expr.String())
 }
 
@@ -29,4 +39,28 @@ func Mean(colName string) Aggregation {
 
 func Count(colName string) Aggregation {
 	return Aggregation{Func: CountAgg, Expr: Col(colName)}
+}
+
+func Min(colName string) Aggregation {
+	return Aggregation{Func: MinAgg, Expr: Col(colName)}
+}
+
+func Max(colName string) Aggregation {
+	return Aggregation{Func: MaxAgg, Expr: Col(colName)}
+}
+
+func Std(colName string) Aggregation {
+	return Aggregation{Func: StdAgg, Expr: Col(colName)}
+}
+
+func Var(colName string) Aggregation {
+	return Aggregation{Func: VarAgg, Expr: Col(colName)}
+}
+
+func Median(colName string) Aggregation {
+	return Aggregation{Func: MedianAgg, Expr: Col(colName)}
+}
+
+func Quantile(colName string, q float64) Aggregation {
+	return Aggregation{Func: QuantileAgg, Expr: Col(colName), Param: q}
 }
