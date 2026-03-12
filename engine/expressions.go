@@ -1,0 +1,75 @@
+package engine
+
+import (
+	"errors"
+
+	"github.com/ecelayes/grizz/dataframe"
+	"github.com/ecelayes/grizz/expr"
+	"github.com/ecelayes/grizz/internal/memory"
+	"github.com/ecelayes/grizz/series"
+)
+
+func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.DataFrame, error) {
+	result := dataframe.New()
+	alloc := memory.DefaultAllocator
+
+	for i := 0; i < df.NumCols(); i++ {
+		col, _ := df.Col(i)
+		result.AddSeries(col)
+	}
+
+	for _, colExpr := range columns {
+		newCol, err := evaluateExpression(df, colExpr, alloc)
+		if err != nil {
+			return nil, err
+		}
+		if newCol != nil {
+			result.AddSeries(newCol)
+		}
+	}
+
+	return result, nil
+}
+
+func evaluateExpression(df *dataframe.DataFrame, colExpr expr.Expr, alloc memory.Allocator) (series.Series, error) {
+	switch e := colExpr.(type) {
+	case expr.FillNullExpr:
+		return applyFillNull(df, e, alloc)
+	case expr.FillNullForwardExpr:
+		return applyFillNullForward(df, e, alloc)
+	case expr.FillNullBackwardExpr:
+		return applyFillNullBackward(df, e, alloc)
+	case expr.CoalesceExpr:
+		return applyCoalesce(df, e, alloc)
+	case expr.ContainsExpr:
+		return applyContains(df, e, alloc)
+	case expr.ReplaceExpr:
+		return applyReplace(df, e, alloc)
+	case expr.UpperExpr:
+		return applyUpper(df, e, alloc)
+	case expr.LowerExpr:
+		return applyLower(df, e, alloc)
+	case expr.StripExpr:
+		return applyStrip(df, e, alloc)
+	case expr.LengthExpr:
+		return applyLength(df, e, alloc)
+	case expr.TrimExpr:
+		return applyTrim(df, e, alloc)
+	case expr.LPadExpr:
+		return applyLPad(df, e, alloc)
+	case expr.RPadExpr:
+		return applyRPad(df, e, alloc)
+	case expr.ContainsRegexExpr:
+		return applyContainsRegex(df, e, alloc)
+	case expr.SliceExpr:
+		return applySlice(df, e, alloc)
+	case expr.SplitExpr:
+		return applySplit(df, e, alloc)
+	case expr.CastExpr:
+		return applyCast(df, e, alloc)
+	case expr.OtherwiseExpr:
+		return applyOtherwise(df, e, alloc)
+	default:
+		return nil, errors.New("unsupported expression in WithColumns")
+	}
+}
