@@ -354,3 +354,42 @@ func TestEvaluateConditionBooleanLt(t *testing.T) {
 		t.Errorf("Expected 3 elements, got %d", len(mask))
 	}
 }
+
+func TestEvaluateConditionIsInInt(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("age", memory.DefaultAllocator, []int64{10, 20, 30, 40}, nil))
+
+	mask, err := evaluateCondition(df, expr.Col("age").IsIn([]any{20, 30}))
+	if err != nil {
+		t.Fatalf("evaluateCondition failed: %v", err)
+	}
+	if mask[0] || !mask[1] || !mask[2] || mask[3] {
+		t.Errorf("Expected [false, true, true, false], got %v", mask)
+	}
+}
+
+func TestEvaluateConditionIsInString(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("name", memory.DefaultAllocator, []string{"alice", "bob", "charlie", "dave"}, nil))
+
+	mask, err := evaluateCondition(df, expr.Col("name").IsIn([]any{"alice", "charlie"}))
+	if err != nil {
+		t.Fatalf("evaluateCondition failed: %v", err)
+	}
+	if !mask[0] || mask[1] || !mask[2] || mask[3] {
+		t.Errorf("Expected [true, false, true, false], got %v", mask)
+	}
+}
+
+func TestEvaluateConditionIsInWithNull(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("age", memory.DefaultAllocator, []int64{10, 20, 30}, []bool{true, false, true}))
+
+	mask, err := evaluateCondition(df, expr.Col("age").IsIn([]any{20, 30}))
+	if err != nil {
+		t.Fatalf("evaluateCondition failed: %v", err)
+	}
+	if mask[0] || mask[1] || !mask[2] {
+		t.Errorf("Expected [false, false, true], got %v", mask)
+	}
+}

@@ -23,6 +23,8 @@ go get github.com/ecelayes/grizz
 package main
 
 import (
+    "github.com/ecelayes/grizz/dataframe"
+    "github.com/ecelayes/grizz/engine"
     "github.com/ecelayes/grizz/expr"
     "github.com/ecelayes/grizz/io/csv"
 )
@@ -36,7 +38,7 @@ func main() {
     result, _ := df.Lazy().
         Filter(expr.Col("age").Gt(expr.Lit(25))).
         Select(expr.Col("name"), expr.Col("age")).
-        Collect()
+        Collect(engine.Execute)
 
     defer result.Release()
     result.Show()
@@ -158,6 +160,8 @@ df.Limit(100)
 ### Lazy API
 
 ```go
+import "github.com/ecelayes/grizz/engine"
+
 // Build lazy query
 lazy := df.Lazy().
     Filter(expr.Col("age").Gt(expr.Lit(25))).
@@ -165,7 +169,7 @@ lazy := df.Lazy().
     GroupBy("department").Agg(expr.Sum("salary"))
 
 // Collect when ready
-result, _ := lazy.Collect()
+result, _ := lazy.Collect(engine.Execute)
 ```
 
 ### I/O

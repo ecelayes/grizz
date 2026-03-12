@@ -1,7 +1,6 @@
 package dataframe
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -83,8 +82,8 @@ func (lf *LazyFrame) Plan() LogicalPlan {
 	return lf.plan
 }
 
-func (lf *LazyFrame) Collect() (*DataFrame, error) {
-	return nil, errors.New("use engine.Execute(lf.Plan()) to collect the lazy frame")
+func (lf *LazyFrame) Collect(execFn func(LogicalPlan) (*DataFrame, error)) (*DataFrame, error) {
+	return execFn(lf.plan)
 }
 
 type GroupByPlan struct {
@@ -363,6 +362,28 @@ func (lf *LazyFrame) WithWindow(funcExpr expr.WindowExpr, partBy []string, order
 			Func:    funcExpr,
 			PartBy:  partBy,
 			OrderBy: orderBy,
+		},
+	}
+}
+
+type MeltPlan struct {
+	Input     LogicalPlan
+	IdVars    []string
+	ValueVars []string
+}
+
+func (m MeltPlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	inputStr := m.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sMelt: id_vars=%v, value_vars=%v\n%s", pad, m.IdVars, m.ValueVars, inputStr)
+}
+
+func (lf *LazyFrame) Melt(idVars, valueVars []string) *LazyFrame {
+	return &LazyFrame{
+		plan: MeltPlan{
+			Input:     lf.plan,
+			IdVars:    idVars,
+			ValueVars: valueVars,
 		},
 	}
 }

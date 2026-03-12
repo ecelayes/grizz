@@ -10,6 +10,7 @@ import (
 
 type Series interface {
 	Name() string
+	SetName(name string)
 	Type() grizzarrows.DataType
 	Len() int
 	IsNull(i int) bool
@@ -35,6 +36,10 @@ func NewFloat64Series(name string, mem grizzmemory.Allocator, values []float64, 
 
 func (s *Float64Series) Name() string {
 	return s.name
+}
+
+func (s *Float64Series) SetName(name string) {
+	s.name = name
 }
 
 func (s *Float64Series) Type() grizzarrows.DataType {

@@ -545,3 +545,51 @@ func TestAggregationArgMax(t *testing.T) {
 		t.Errorf("Expected %s, got %s", expected, result.String())
 	}
 }
+
+func TestIsInInt(t *testing.T) {
+	col := Col("a")
+	result := col.IsIn([]any{1, 2, 3})
+	if len(result.Values) != 3 {
+		t.Error("IsIn should have 3 values")
+	}
+}
+
+func TestIsInString(t *testing.T) {
+	col := Col("name")
+	result := col.IsIn([]any{"alice", "bob"})
+	if len(result.Values) != 2 {
+		t.Error("IsIn should have 2 values")
+	}
+}
+
+func TestIsInFloat(t *testing.T) {
+	col := Col("value")
+	result := col.IsIn([]any{1.5, 2.5, 3.5})
+	if len(result.Values) != 3 {
+		t.Error("IsIn should have 3 values")
+	}
+}
+
+func TestColumnAddColumn(t *testing.T) {
+	colA := Col("a")
+	colB := Col("b")
+	_ = colA.Add(colB)
+}
+
+func TestColumnSubColumn(t *testing.T) {
+	colA := Col("a")
+	colB := Col("b")
+	_ = colA.Sub(colB)
+}
+
+func TestColumnMulColumn(t *testing.T) {
+	colA := Col("a")
+	colB := Col("b")
+	_ = colA.Mul(colB)
+}
+
+func TestColumnDivColumn(t *testing.T) {
+	colA := Col("a")
+	colB := Col("b")
+	_ = colA.Div(colB)
+}

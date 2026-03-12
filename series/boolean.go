@@ -26,6 +26,10 @@ func (s *BooleanSeries) Name() string {
 	return s.name
 }
 
+func (s *BooleanSeries) SetName(name string) {
+	s.name = name
+}
+
 func (s *BooleanSeries) Type() grizzarrows.DataType {
 	return s.data.DataType()
 }

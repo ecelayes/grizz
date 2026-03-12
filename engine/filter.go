@@ -72,6 +72,108 @@ func evaluateCondition(df *dataframe.DataFrame, condition expr.Expr) ([]bool, er
 		}
 		return result, nil
 
+	case expr.IsInExpr:
+		colExpr, ok := cond.Expr.(expr.Column)
+		if !ok {
+			return nil, errors.New("IsIn only supports column expressions")
+		}
+		col, err := df.ColByName(colExpr.Name)
+		if err != nil {
+			return nil, err
+		}
+		valueSet := make(map[any]bool)
+		for _, lit := range cond.Values {
+			val := lit.Value
+			if intVal, ok := val.(int); ok {
+				val = int64(intVal)
+			}
+			valueSet[val] = true
+		}
+		mask := make([]bool, col.Len())
+		for i := 0; i < col.Len(); i++ {
+			if col.IsNull(i) {
+				mask[i] = false
+				continue
+			}
+			var val any
+			switch c := col.(type) {
+			case *series.Int64Series:
+				val = c.Value(i)
+			case *series.Float64Series:
+				val = c.Value(i)
+			case *series.StringSeries:
+				val = c.Value(i)
+			case *series.BooleanSeries:
+				val = c.Value(i)
+			}
+			mask[i] = valueSet[val]
+		}
+		return mask, nil
+
+	case expr.BetweenExpr:
+		colExpr, ok := cond.Expr.(expr.Column)
+		if !ok {
+			return nil, errors.New("Between only supports column expressions")
+		}
+		col, err := df.ColByName(colExpr.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		lower := cond.Lower.Value
+		upper := cond.Upper.Value
+
+		if intVal, ok := lower.(int); ok {
+			lower = int64(intVal)
+		}
+		if intVal, ok := upper.(int); ok {
+			upper = int64(intVal)
+		}
+
+		mask := make([]bool, col.Len())
+		for i := 0; i < col.Len(); i++ {
+			if col.IsNull(i) {
+				mask[i] = false
+				continue
+			}
+			switch c := col.(type) {
+			case *series.Int64Series:
+				val := c.Value(i)
+				lowerVal, lowerOk := lower.(int64)
+				upperVal, upperOk := upper.(int64)
+				if !lowerOk || !upperOk {
+					mask[i] = false
+					continue
+				}
+				mask[i] = val >= lowerVal && val <= upperVal
+			case *series.Float64Series:
+				val := c.Value(i)
+				var lowerVal, upperVal float64
+				switch l := lower.(type) {
+				case float64:
+					lowerVal = l
+				case int64:
+					lowerVal = float64(l)
+				default:
+					mask[i] = false
+					continue
+				}
+				switch u := upper.(type) {
+				case float64:
+					upperVal = u
+				case int64:
+					upperVal = float64(u)
+				default:
+					mask[i] = false
+					continue
+				}
+				mask[i] = val >= lowerVal && val <= upperVal
+			default:
+				return nil, errors.New("Between only supports numeric columns")
+			}
+		}
+		return mask, nil
+
 	case expr.BinaryOp:
 		binOp := cond
 		colExpr, ok1 := binOp.Left.(expr.Column)

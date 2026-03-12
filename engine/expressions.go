@@ -33,6 +33,17 @@ func applyWithColumns(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.
 
 func evaluateExpression(df *dataframe.DataFrame, colExpr expr.Expr, alloc memory.Allocator) (series.Series, error) {
 	switch e := colExpr.(type) {
+	case expr.AliasExpr:
+		result, err := evaluateExpression(df, e.Expr, alloc)
+		if err != nil {
+			return nil, err
+		}
+		if result != nil {
+			result.SetName(e.Alias)
+		}
+		return result, nil
+	case expr.ArithmeticOp:
+		return applyArithmetic(df, e, alloc)
 	case expr.FillNullExpr:
 		return applyFillNull(df, e, alloc)
 	case expr.FillNullForwardExpr:
@@ -69,6 +80,24 @@ func evaluateExpression(df *dataframe.DataFrame, colExpr expr.Expr, alloc memory
 		return applyCast(df, e, alloc)
 	case expr.OtherwiseExpr:
 		return applyOtherwise(df, e, alloc)
+	case expr.BetweenExpr:
+		return applyBetween(df, e, alloc)
+	case expr.YearExpr:
+		return applyYear(df, e, alloc)
+	case expr.MonthExpr:
+		return applyMonth(df, e, alloc)
+	case expr.DayExpr:
+		return applyDay(df, e, alloc)
+	case expr.HourExpr:
+		return applyHour(df, e, alloc)
+	case expr.MinuteExpr:
+		return applyMinute(df, e, alloc)
+	case expr.SecondExpr:
+		return applySecond(df, e, alloc)
+	case expr.WeekdayExpr:
+		return applyWeekday(df, e, alloc)
+	case expr.ExplodeExpr:
+		return applyExplode(df, e, alloc)
 	default:
 		return nil, errors.New("unsupported expression in WithColumns")
 	}

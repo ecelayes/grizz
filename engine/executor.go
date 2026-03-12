@@ -109,7 +109,18 @@ func Execute(plan dataframe.LogicalPlan) (*dataframe.DataFrame, error) {
 		}
 		return applyWindow(inputDF, p.Func, p.PartBy, p.OrderBy)
 
+	case dataframe.MeltPlan:
+		inputDF, err := Execute(p.Input)
+		if err != nil {
+			return nil, err
+		}
+		return applyMelt(inputDF, p.IdVars, p.ValueVars)
+
 	default:
 		return nil, errors.New("unknown logical plan node")
 	}
+}
+
+func Collect(lf *dataframe.LazyFrame) (*dataframe.DataFrame, error) {
+	return Execute(lf.Plan())
 }
