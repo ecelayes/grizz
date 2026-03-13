@@ -19,9 +19,21 @@ func (df *DataFrame) Join(other *DataFrame, on string, how JoinType) (*DataFrame
 		return outerJoin(df, other, on)
 	case Cross:
 		return crossJoin(df, other)
+	case Semi:
+		return semiJoin(df, other, on)
+	case Anti:
+		return antiJoin(df, other, on)
 	default:
 		return nil, fmt.Errorf("unsupported join type")
 	}
+}
+
+func (df *DataFrame) SemiJoin(other *DataFrame, on string) (*DataFrame, error) {
+	return semiJoin(df, other, on)
+}
+
+func (df *DataFrame) AntiJoin(other *DataFrame, on string) (*DataFrame, error) {
+	return antiJoin(df, other, on)
 }
 
 func innerJoin(left, right *DataFrame, on string) (*DataFrame, error) {
@@ -244,6 +256,205 @@ func outerJoin(left, right *DataFrame, on string) (*DataFrame, error) {
 		}
 	}
 	return buildJoinResultWithNulls(left, right, on, leftIdx, rightIdx)
+}
+
+func semiJoin(left, right *DataFrame, on string) (*DataFrame, error) {
+	leftKeyCol, err := left.ColByName(on)
+	if err != nil {
+		return nil, err
+	}
+	rightKeyCol, err := right.ColByName(on)
+	if err != nil {
+		return nil, err
+	}
+
+	if leftStrCol, ok := leftKeyCol.(*series.StringSeries); ok {
+		if rightStrCol, ok := rightKeyCol.(*series.StringSeries); ok {
+			return semiJoinString(left, right, on, leftStrCol, rightStrCol)
+		}
+	}
+
+	if leftIntCol, ok := leftKeyCol.(*series.Int64Series); ok {
+		if rightIntCol, ok := rightKeyCol.(*series.Int64Series); ok {
+			return semiJoinInt(left, right, on, leftIntCol, rightIntCol)
+		}
+	}
+
+	if leftFloatCol, ok := leftKeyCol.(*series.Float64Series); ok {
+		if rightFloatCol, ok := rightKeyCol.(*series.Float64Series); ok {
+			return semiJoinFloat(left, right, on, leftFloatCol, rightFloatCol)
+		}
+	}
+
+	return nil, fmt.Errorf("join key must be the same type in both dataframes")
+}
+
+func semiJoinString(left, right *DataFrame, on string, leftCol, rightCol *series.StringSeries) (*DataFrame, error) {
+	rightMap := make(map[string]bool)
+	for i := 0; i < rightCol.Len(); i++ {
+		if !rightCol.IsNull(i) {
+			rightMap[rightCol.Value(i)] = true
+		}
+	}
+
+	var leftIdx []int
+	for i := 0; i < leftCol.Len(); i++ {
+		if leftCol.IsNull(i) {
+			continue
+		}
+		val := leftCol.Value(i)
+		if rightMap[val] {
+			leftIdx = append(leftIdx, i)
+		}
+	}
+	return buildSemiJoinResult(left, leftIdx)
+}
+
+func semiJoinInt(left, right *DataFrame, on string, leftCol, rightCol *series.Int64Series) (*DataFrame, error) {
+	rightMap := make(map[int64]bool)
+	for i := 0; i < rightCol.Len(); i++ {
+		if !rightCol.IsNull(i) {
+			rightMap[rightCol.Value(i)] = true
+		}
+	}
+
+	var leftIdx []int
+	for i := 0; i < leftCol.Len(); i++ {
+		if leftCol.IsNull(i) {
+			continue
+		}
+		val := leftCol.Value(i)
+		if rightMap[val] {
+			leftIdx = append(leftIdx, i)
+		}
+	}
+	return buildSemiJoinResult(left, leftIdx)
+}
+
+func semiJoinFloat(left, right *DataFrame, on string, leftCol, rightCol *series.Float64Series) (*DataFrame, error) {
+	rightMap := make(map[float64]bool)
+	for i := 0; i < rightCol.Len(); i++ {
+		if !rightCol.IsNull(i) {
+			rightMap[rightCol.Value(i)] = true
+		}
+	}
+
+	var leftIdx []int
+	for i := 0; i < leftCol.Len(); i++ {
+		if leftCol.IsNull(i) {
+			continue
+		}
+		val := leftCol.Value(i)
+		if rightMap[val] {
+			leftIdx = append(leftIdx, i)
+		}
+	}
+	return buildSemiJoinResult(left, leftIdx)
+}
+
+func antiJoin(left, right *DataFrame, on string) (*DataFrame, error) {
+	leftKeyCol, err := left.ColByName(on)
+	if err != nil {
+		return nil, err
+	}
+	rightKeyCol, err := right.ColByName(on)
+	if err != nil {
+		return nil, err
+	}
+
+	if leftStrCol, ok := leftKeyCol.(*series.StringSeries); ok {
+		if rightStrCol, ok := rightKeyCol.(*series.StringSeries); ok {
+			return antiJoinString(left, right, on, leftStrCol, rightStrCol)
+		}
+	}
+
+	if leftIntCol, ok := leftKeyCol.(*series.Int64Series); ok {
+		if rightIntCol, ok := rightKeyCol.(*series.Int64Series); ok {
+			return antiJoinInt(left, right, on, leftIntCol, rightIntCol)
+		}
+	}
+
+	if leftFloatCol, ok := leftKeyCol.(*series.Float64Series); ok {
+		if rightFloatCol, ok := rightKeyCol.(*series.Float64Series); ok {
+			return antiJoinFloat(left, right, on, leftFloatCol, rightFloatCol)
+		}
+	}
+
+	return nil, fmt.Errorf("join key must be the same type in both dataframes")
+}
+
+func antiJoinString(left, right *DataFrame, on string, leftCol, rightCol *series.StringSeries) (*DataFrame, error) {
+	rightMap := make(map[string]bool)
+	for i := 0; i < rightCol.Len(); i++ {
+		if !rightCol.IsNull(i) {
+			rightMap[rightCol.Value(i)] = true
+		}
+	}
+
+	var leftIdx []int
+	for i := 0; i < leftCol.Len(); i++ {
+		if leftCol.IsNull(i) {
+			continue
+		}
+		val := leftCol.Value(i)
+		if !rightMap[val] {
+			leftIdx = append(leftIdx, i)
+		}
+	}
+	return buildSemiJoinResult(left, leftIdx)
+}
+
+func antiJoinInt(left, right *DataFrame, on string, leftCol, rightCol *series.Int64Series) (*DataFrame, error) {
+	rightMap := make(map[int64]bool)
+	for i := 0; i < rightCol.Len(); i++ {
+		if !rightCol.IsNull(i) {
+			rightMap[rightCol.Value(i)] = true
+		}
+	}
+
+	var leftIdx []int
+	for i := 0; i < leftCol.Len(); i++ {
+		if leftCol.IsNull(i) {
+			continue
+		}
+		val := leftCol.Value(i)
+		if !rightMap[val] {
+			leftIdx = append(leftIdx, i)
+		}
+	}
+	return buildSemiJoinResult(left, leftIdx)
+}
+
+func antiJoinFloat(left, right *DataFrame, on string, leftCol, rightCol *series.Float64Series) (*DataFrame, error) {
+	rightMap := make(map[float64]bool)
+	for i := 0; i < rightCol.Len(); i++ {
+		if !rightCol.IsNull(i) {
+			rightMap[rightCol.Value(i)] = true
+		}
+	}
+
+	var leftIdx []int
+	for i := 0; i < leftCol.Len(); i++ {
+		if leftCol.IsNull(i) {
+			continue
+		}
+		val := leftCol.Value(i)
+		if !rightMap[val] {
+			leftIdx = append(leftIdx, i)
+		}
+	}
+	return buildSemiJoinResult(left, leftIdx)
+}
+
+func buildSemiJoinResult(left *DataFrame, leftIdx []int) (*DataFrame, error) {
+	result := New()
+	alloc := memory.DefaultAllocator
+
+	for i := 0; i < left.NumCols(); i++ {
+		col, _ := left.Col(i)
+		result.AddSeries(copySeriesByIndices(col, leftIdx, alloc))
+	}
+	return result, nil
 }
 
 func crossJoin(left, right *DataFrame) (*DataFrame, error) {

@@ -677,3 +677,87 @@ func TestApplyGroupByMultipleAggregations(t *testing.T) {
 		t.Errorf("Expected 3 columns, got %d", result.NumCols())
 	}
 }
+
+func TestApplyGroupByHead(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("group", memory.DefaultAllocator, []string{"a", "a", "a", "b", "b", "b"}, nil))
+	df.AddSeries(series.NewFloat64Series("value", memory.DefaultAllocator, []float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0}, nil))
+
+	result, err := applyGroupByHead(df, []string{"group"}, 2)
+	if err != nil {
+		t.Fatalf("applyGroupByHead failed: %v", err)
+	}
+
+	if result.NumRows() != 4 {
+		t.Errorf("Expected 4 rows (2 per group), got %d", result.NumRows())
+	}
+
+	groupCol, _ := result.ColByName("group")
+	groups := groupCol.(*series.StringSeries)
+	if groups.Value(0) != "a" || groups.Value(1) != "a" {
+		t.Errorf("Expected first 2 rows to be group 'a', got %s, %s", groups.Value(0), groups.Value(1))
+	}
+}
+
+func TestApplyGroupByTail(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("group", memory.DefaultAllocator, []string{"a", "a", "a", "b", "b", "b"}, nil))
+	df.AddSeries(series.NewFloat64Series("value", memory.DefaultAllocator, []float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0}, nil))
+
+	result, err := applyGroupByTail(df, []string{"group"}, 2)
+	if err != nil {
+		t.Fatalf("applyGroupByTail failed: %v", err)
+	}
+
+	if result.NumRows() != 4 {
+		t.Errorf("Expected 4 rows (2 per group), got %d", result.NumRows())
+	}
+
+	groupCol, _ := result.ColByName("group")
+	groups := groupCol.(*series.StringSeries)
+	if groups.Value(2) != "b" || groups.Value(3) != "b" {
+		t.Errorf("Expected last 2 rows to be group 'b', got %s, %s", groups.Value(2), groups.Value(3))
+	}
+}
+
+func TestApplyGroupByGroups(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("group", memory.DefaultAllocator, []string{"a", "a", "a", "b", "b"}, nil))
+	df.AddSeries(series.NewFloat64Series("value", memory.DefaultAllocator, []float64{1.0, 2.0, 3.0, 4.0, 5.0}, nil))
+
+	result, err := applyGroupByGroups(df, []string{"group"})
+	if err != nil {
+		t.Fatalf("applyGroupByGroups failed: %v", err)
+	}
+
+	if result.NumRows() != 2 {
+		t.Errorf("Expected 2 groups, got %d", result.NumRows())
+	}
+
+	groupCol, _ := result.ColByName("group")
+	groups := groupCol.(*series.StringSeries)
+	if groups.Value(0) != "a" || groups.Value(1) != "b" {
+		t.Errorf("Expected groups 'a' and 'b', got %s, %s", groups.Value(0), groups.Value(1))
+	}
+
+	countCol, _ := result.ColByName("__row_count")
+	counts := countCol.(*series.Int64Series)
+	if counts.Value(0) != 3 || counts.Value(1) != 2 {
+		t.Errorf("Expected counts 3 and 2, got %d and %d", counts.Value(0), counts.Value(1))
+	}
+}
+
+func TestApplyGroupByHeadLessThanGroupSize(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("group", memory.DefaultAllocator, []string{"a", "a", "b"}, nil))
+	df.AddSeries(series.NewFloat64Series("value", memory.DefaultAllocator, []float64{1.0, 2.0, 3.0}, nil))
+
+	result, err := applyGroupByHead(df, []string{"group"}, 5)
+	if err != nil {
+		t.Fatalf("applyGroupByHead failed: %v", err)
+	}
+
+	if result.NumRows() != 3 {
+		t.Errorf("Expected 3 rows (all rows), got %d", result.NumRows())
+	}
+}

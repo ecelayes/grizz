@@ -72,6 +72,10 @@ func evaluateExpression(df *dataframe.DataFrame, colExpr expr.Expr, alloc memory
 		return applyRPad(df, e, alloc)
 	case expr.ContainsRegexExpr:
 		return applyContainsRegex(df, e, alloc)
+	case expr.ExtractExpr:
+		return applyExtract(df, e, alloc)
+	case expr.FindExpr:
+		return applyFind(df, e, alloc)
 	case expr.SliceExpr:
 		return applySlice(df, e, alloc)
 	case expr.SplitExpr:
@@ -98,6 +102,22 @@ func evaluateExpression(df *dataframe.DataFrame, colExpr expr.Expr, alloc memory
 		return applyWeekday(df, e, alloc)
 	case expr.ExplodeExpr:
 		return applyExplode(df, e, alloc)
+	case expr.RollingSumExpr:
+		return applyRollingSum(df, e, alloc)
+	case expr.RollingMeanExpr:
+		return applyRollingMean(df, e, alloc)
+	case expr.RollingMinExpr:
+		return applyRollingMin(df, e, alloc)
+	case expr.RollingMaxExpr:
+		return applyRollingMax(df, e, alloc)
+	case expr.CumSumExpr:
+		return applyCumSum(df, e, alloc)
+	case expr.CumProdExpr:
+		return applyCumProd(df, e, alloc)
+	case expr.CumMinExpr:
+		return applyCumMin(df, e, alloc)
+	case expr.CumMaxExpr:
+		return applyCumMax(df, e, alloc)
 	default:
 		return nil, errors.New("unsupported expression in WithColumns")
 	}

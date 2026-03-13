@@ -188,3 +188,63 @@ func TestApplyWithColumnsContainsRegex(t *testing.T) {
 		t.Errorf("Expected 2 columns, got %d", result.NumCols())
 	}
 }
+
+func TestExtract(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("text", memory.DefaultAllocator, []string{"abc123def", "hello456", "nomatch"}, nil))
+
+	result, err := applyWithColumns(df, []expr.Expr{
+		expr.Extract(expr.Col("text"), expr.Lit(`(\d+)`)).Alias("extracted"),
+	})
+	if err != nil {
+		t.Fatalf("applyWithColumns failed: %v", err)
+	}
+
+	resCol, err := result.ColByName("extracted")
+	if err != nil {
+		t.Fatalf("ColByName failed: %v", err)
+	}
+	res := resCol.(*series.StringSeries)
+
+	if res.Value(0) != "123" {
+		t.Errorf("Expected '123' at index 0, got '%s'", res.Value(0))
+	}
+	if res.Value(1) != "456" {
+		t.Errorf("Expected '456' at index 1, got '%s'", res.Value(1))
+	}
+	if res.Value(2) != "" {
+		t.Errorf("Expected '' at index 2, got '%s'", res.Value(2))
+	}
+
+	result.Release()
+}
+
+func TestFind(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("text", memory.DefaultAllocator, []string{"hello world", "test", "abc"}, nil))
+
+	result, err := applyWithColumns(df, []expr.Expr{
+		expr.Find(expr.Col("text"), expr.Lit("world")).Alias("pos"),
+	})
+	if err != nil {
+		t.Fatalf("applyWithColumns failed: %v", err)
+	}
+
+	resCol, err := result.ColByName("pos")
+	if err != nil {
+		t.Fatalf("ColByName failed: %v", err)
+	}
+	res := resCol.(*series.Int64Series)
+
+	if res.Value(0) != 6 {
+		t.Errorf("Expected 6 at index 0, got %d", res.Value(0))
+	}
+	if res.Value(1) != -1 {
+		t.Errorf("Expected -1 at index 1, got %d", res.Value(1))
+	}
+	if res.Value(2) != -1 {
+		t.Errorf("Expected -1 at index 2, got %d", res.Value(2))
+	}
+
+	result.Release()
+}

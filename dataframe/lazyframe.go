@@ -13,11 +13,21 @@ type LogicalPlan interface {
 
 type ScanPlan struct {
 	DataFrame *DataFrame
+	Columns   []string
+	NumRows   int
 }
 
 func (s ScanPlan) Explain(indent int) string {
 	pad := strings.Repeat("  ", indent)
-	return fmt.Sprintf("%sScan DataFrame (Rows: %d, Cols: %d)", pad, s.DataFrame.NumRows(), s.DataFrame.NumCols())
+	colsInfo := ""
+	if len(s.Columns) > 0 {
+		colsInfo = " (projected: " + strings.Join(s.Columns, ", ") + ")"
+	}
+	rowsInfo := ""
+	if s.NumRows > 0 {
+		rowsInfo = fmt.Sprintf(" (limit: %d)", s.NumRows)
+	}
+	return fmt.Sprintf("%sScan DataFrame (Rows: %d, Cols: %d)%s%s", pad, s.DataFrame.NumRows(), s.DataFrame.NumCols(), colsInfo, rowsInfo)
 }
 
 type FilterPlan struct {
@@ -120,6 +130,70 @@ func (lgb *LazyGroupBy) Agg(aggs ...expr.Aggregation) *LazyFrame {
 			Input: lgb.lf.plan,
 			Keys:  lgb.keys,
 			Aggs:  aggs,
+		},
+	}
+}
+
+type GroupByHeadPlan struct {
+	Input LogicalPlan
+	Keys  []string
+	N     int
+}
+
+func (g GroupByHeadPlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	inputStr := g.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sGroupBy Head: [%s] n=%d\n%s", pad, strings.Join(g.Keys, ", "), g.N, inputStr)
+}
+
+func (lgb *LazyGroupBy) Head(n int) *LazyFrame {
+	return &LazyFrame{
+		plan: GroupByHeadPlan{
+			Input: lgb.lf.plan,
+			Keys:  lgb.keys,
+			N:     n,
+		},
+	}
+}
+
+type GroupByTailPlan struct {
+	Input LogicalPlan
+	Keys  []string
+	N     int
+}
+
+func (g GroupByTailPlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	inputStr := g.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sGroupBy Tail: [%s] n=%d\n%s", pad, strings.Join(g.Keys, ", "), g.N, inputStr)
+}
+
+func (lgb *LazyGroupBy) Tail(n int) *LazyFrame {
+	return &LazyFrame{
+		plan: GroupByTailPlan{
+			Input: lgb.lf.plan,
+			Keys:  lgb.keys,
+			N:     n,
+		},
+	}
+}
+
+type GroupByGroupsPlan struct {
+	Input LogicalPlan
+	Keys  []string
+}
+
+func (g GroupByGroupsPlan) Explain(indent int) string {
+	pad := strings.Repeat("  ", indent)
+	inputStr := g.Input.Explain(indent + 1)
+	return fmt.Sprintf("%sGroupBy Groups: [%s]\n%s", pad, strings.Join(g.Keys, ", "), inputStr)
+}
+
+func (lgb *LazyGroupBy) Groups() *LazyFrame {
+	return &LazyFrame{
+		plan: GroupByGroupsPlan{
+			Input: lgb.lf.plan,
+			Keys:  lgb.keys,
 		},
 	}
 }
@@ -235,6 +309,8 @@ const (
 	Right JoinType = "Right"
 	Outer JoinType = "Outer"
 	Cross JoinType = "Cross"
+	Semi  JoinType = "Semi"
+	Anti  JoinType = "Anti"
 )
 
 type JoinPlan struct {

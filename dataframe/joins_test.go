@@ -427,3 +427,43 @@ func TestJoinInnerWithNullsInKey(t *testing.T) {
 		t.Errorf("Expected 1 row, got %d", joined.NumRows())
 	}
 }
+
+func TestSemiJoin(t *testing.T) {
+	df1 := New()
+	df1.AddSeries(series.NewStringSeries("a", memory.DefaultAllocator, []string{"a", "b", "c", "d"}, nil))
+	df1.AddSeries(series.NewStringSeries("b", memory.DefaultAllocator, []string{"w", "x", "y", "z"}, nil))
+
+	df2 := New()
+	df2.AddSeries(series.NewStringSeries("a", memory.DefaultAllocator, []string{"b", "c", "e"}, nil))
+
+	semi, err := df1.SemiJoin(df2, "a")
+	if err != nil {
+		t.Fatalf("SemiJoin failed: %v", err)
+	}
+	if semi.NumRows() != 2 {
+		t.Errorf("Expected 2 rows, got %d", semi.NumRows())
+	}
+	if semi.NumCols() != 2 {
+		t.Errorf("Expected 2 cols, got %d", semi.NumCols())
+	}
+}
+
+func TestAntiJoin(t *testing.T) {
+	df1 := New()
+	df1.AddSeries(series.NewStringSeries("a", memory.DefaultAllocator, []string{"a", "b", "c", "d"}, nil))
+	df1.AddSeries(series.NewStringSeries("b", memory.DefaultAllocator, []string{"w", "x", "y", "z"}, nil))
+
+	df2 := New()
+	df2.AddSeries(series.NewStringSeries("a", memory.DefaultAllocator, []string{"b", "c", "e"}, nil))
+
+	anti, err := df1.AntiJoin(df2, "a")
+	if err != nil {
+		t.Fatalf("AntiJoin failed: %v", err)
+	}
+	if anti.NumRows() != 2 {
+		t.Errorf("Expected 2 rows, got %d", anti.NumRows())
+	}
+	if anti.NumCols() != 2 {
+		t.Errorf("Expected 2 cols, got %d", anti.NumCols())
+	}
+}

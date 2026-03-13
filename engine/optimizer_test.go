@@ -466,3 +466,194 @@ func TestOptimizeWithWindowPlan(t *testing.T) {
 		t.Error("Expected optimized plan, got nil")
 	}
 }
+
+func TestPushDownProjectionToScan(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+	df.AddSeries(series.NewInt64Series("b", memory.DefaultAllocator, []int64{4, 5, 6}, nil))
+
+	selectPlan := dataframe.SelectPlan{
+		Input:   dataframe.ScanPlan{DataFrame: df},
+		Columns: []expr.Expr{expr.Col("a")},
+	}
+
+	opt := NewOptimizer()
+	result := opt.pushDownProjection(selectPlan)
+
+	if result.Input == nil {
+		t.Error("Expected pushed down projection")
+	}
+
+	scanPlan, ok := result.Input.(dataframe.ScanPlan)
+	if !ok {
+		t.Error("Expected ScanPlan as input")
+	}
+
+	if len(scanPlan.Columns) != 1 || scanPlan.Columns[0] != "a" {
+		t.Errorf("Expected columns [a], got %v", scanPlan.Columns)
+	}
+}
+
+func TestPushDownProjectionWithFilter(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+	df.AddSeries(series.NewInt64Series("b", memory.DefaultAllocator, []int64{4, 5, 6}, nil))
+
+	filterPlan := dataframe.FilterPlan{
+		Input:     dataframe.ScanPlan{DataFrame: df},
+		Condition: expr.Col("a").Gt(expr.Lit(1)),
+	}
+
+	selectPlan := dataframe.SelectPlan{
+		Input:   filterPlan,
+		Columns: []expr.Expr{expr.Col("a")},
+	}
+
+	opt := NewOptimizer()
+	result := opt.pushDownProjection(selectPlan)
+
+	if result.Input == nil {
+		t.Error("Expected pushed down projection")
+	}
+}
+
+func TestPushDownProjectionWithLimit(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+	df.AddSeries(series.NewInt64Series("b", memory.DefaultAllocator, []int64{4, 5, 6}, nil))
+
+	limitPlan := dataframe.LimitPlan{
+		Input: dataframe.ScanPlan{DataFrame: df},
+		Limit: 2,
+	}
+
+	selectPlan := dataframe.SelectPlan{
+		Input:   limitPlan,
+		Columns: []expr.Expr{expr.Col("a")},
+	}
+
+	opt := NewOptimizer()
+	result := opt.pushDownProjection(selectPlan)
+
+	if result.Input == nil {
+		t.Error("Expected pushed down projection")
+	}
+}
+
+func TestExtractColumnNames(t *testing.T) {
+	columns := []expr.Expr{
+		expr.Col("a"),
+		expr.Col("b"),
+		expr.Col("c"),
+	}
+
+	result := extractColumnNames(columns)
+
+	if len(result) != 3 {
+		t.Errorf("Expected 3 column names, got %d", len(result))
+	}
+
+	if result[0] != "a" || result[1] != "b" || result[2] != "c" {
+		t.Errorf("Expected [a, b, c], got %v", result)
+	}
+}
+
+func TestOptimizeSelectWithProjectionPushdown(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+	df.AddSeries(series.NewInt64Series("b", memory.DefaultAllocator, []int64{4, 5, 6}, nil))
+
+	selectPlan := dataframe.SelectPlan{
+		Input:   dataframe.ScanPlan{DataFrame: df},
+		Columns: []expr.Expr{expr.Col("a")},
+	}
+
+	result := Optimize(selectPlan)
+	if result == nil {
+		t.Error("Expected optimized plan, got nil")
+	}
+
+	selectResult, ok := result.(dataframe.SelectPlan)
+	if !ok {
+		t.Error("Expected SelectPlan result")
+	}
+
+	scanPlan, ok := selectResult.Input.(dataframe.ScanPlan)
+	if !ok {
+		t.Error("Expected ScanPlan as input after optimization")
+	}
+
+	if len(scanPlan.Columns) != 1 || scanPlan.Columns[0] != "a" {
+		t.Errorf("Expected projected columns [a], got %v", scanPlan.Columns)
+	}
+}
+
+func TestOptimizeFilterSelectWithProjectionPushdown(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+	df.AddSeries(series.NewInt64Series("b", memory.DefaultAllocator, []int64{4, 5, 6}, nil))
+
+	filterPlan := dataframe.FilterPlan{
+		Input:     dataframe.ScanPlan{DataFrame: df},
+		Condition: expr.Col("a").Gt(expr.Lit(1)),
+	}
+
+	selectPlan := dataframe.SelectPlan{
+		Input:   filterPlan,
+		Columns: []expr.Expr{expr.Col("a")},
+	}
+
+	result := Optimize(selectPlan)
+	if result == nil {
+		t.Error("Expected optimized plan, got nil")
+	}
+}
+
+func TestExecuteWithProjectionPushdown(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+	df.AddSeries(series.NewInt64Series("b", memory.DefaultAllocator, []int64{4, 5, 6}, nil))
+
+	lf := df.Lazy().Select(expr.Col("a"))
+
+	result, err := Collect(lf)
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	if result.NumCols() != 1 {
+		t.Errorf("Expected 1 column, got %d", result.NumCols())
+	}
+
+	if result.NumRows() != 3 {
+		t.Errorf("Expected 3 rows, got %d", result.NumRows())
+	}
+
+	cols := result.Columns()
+	if len(cols) != 1 || cols[0] != "a" {
+		t.Errorf("Expected column [a], got %v", cols)
+	}
+}
+
+func TestExecuteWithFilterAndProjectionPushdown(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3, 4, 5}, nil))
+	df.AddSeries(series.NewInt64Series("b", memory.DefaultAllocator, []int64{10, 20, 30, 40, 50}, nil))
+
+	lf := df.Lazy().
+		Filter(expr.Col("a").Gt(expr.Lit(2))).
+		Select(expr.Col("a"))
+
+	result, err := Collect(lf)
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	if result.NumCols() != 1 {
+		t.Errorf("Expected 1 column, got %d", result.NumCols())
+	}
+
+	if result.NumRows() != 3 {
+		t.Errorf("Expected 3 rows, got %d", result.NumRows())
+	}
+}

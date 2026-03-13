@@ -31,6 +31,7 @@ func (o *Optimizer) optimize(plan dataframe.LogicalPlan) dataframe.LogicalPlan {
 	case dataframe.SelectPlan:
 		p.Input = o.optimize(p.Input)
 		p = o.optimizeSelect(p)
+		p = o.pushDownProjection(p)
 		return p
 
 	case dataframe.WithColumnsPlan:
@@ -55,10 +56,12 @@ func (o *Optimizer) optimize(plan dataframe.LogicalPlan) dataframe.LogicalPlan {
 	case dataframe.LimitPlan:
 		p.Input = o.optimize(p.Input)
 		p = o.optimizeLimit(p)
+		p = o.pushDownLimit(p)
 		return p
 
 	case dataframe.TailPlan:
 		p.Input = o.optimize(p.Input)
+		p = o.pushDownTail(p)
 		return p
 
 	case dataframe.SamplePlan:
@@ -230,6 +233,211 @@ func (o *Optimizer) pushDownFilterToJoin(p dataframe.JoinPlan) dataframe.JoinPla
 		p.Left = leftFilter.Input
 		p.Right = rightFilter.Input
 		return p
+	}
+
+	return p
+}
+
+func (o *Optimizer) pushDownProjection(p dataframe.SelectPlan) dataframe.SelectPlan {
+	input := p.Input
+
+	switch inp := input.(type) {
+	case dataframe.ScanPlan:
+		colNames := extractColumnNames(p.Columns)
+		if len(colNames) > 0 {
+			return dataframe.SelectPlan{
+				Input: dataframe.ScanPlan{
+					DataFrame: inp.DataFrame,
+					Columns:   colNames,
+				},
+				Columns: p.Columns,
+			}
+		}
+
+	case dataframe.FilterPlan:
+		newSelect := dataframe.SelectPlan{
+			Input:   inp.Input,
+			Columns: p.Columns,
+		}
+		optimizedSelect := o.pushDownProjection(newSelect)
+		return dataframe.SelectPlan{
+			Input:   dataframe.FilterPlan{Input: optimizedSelect.Input, Condition: inp.Condition},
+			Columns: p.Columns,
+		}
+
+	case dataframe.WithColumnsPlan:
+		newSelect := dataframe.SelectPlan{
+			Input:   inp.Input,
+			Columns: p.Columns,
+		}
+		optimizedSelect := o.pushDownProjection(newSelect)
+		return dataframe.SelectPlan{
+			Input:   dataframe.WithColumnsPlan{Input: optimizedSelect.Input, Columns: inp.Columns},
+			Columns: p.Columns,
+		}
+
+	case dataframe.LimitPlan:
+		newSelect := dataframe.SelectPlan{
+			Input:   inp.Input,
+			Columns: p.Columns,
+		}
+		optimizedSelect := o.pushDownProjection(newSelect)
+		return dataframe.SelectPlan{
+			Input:   dataframe.LimitPlan{Input: optimizedSelect.Input, Limit: inp.Limit},
+			Columns: p.Columns,
+		}
+	}
+
+	return p
+}
+
+func extractColumnNames(columns []expr.Expr) []string {
+	var colNames []string
+	for _, col := range columns {
+		if c, ok := col.(expr.Column); ok {
+			colNames = append(colNames, c.Name)
+		}
+	}
+	return colNames
+}
+
+func (o *Optimizer) pushDownLimit(p dataframe.LimitPlan) dataframe.LimitPlan {
+	input := p.Input
+
+	switch inp := input.(type) {
+	case dataframe.ScanPlan:
+		limit := p.Limit
+		if inp.NumRows == 0 || inp.NumRows > limit {
+			return dataframe.LimitPlan{
+				Input: dataframe.ScanPlan{
+					DataFrame: inp.DataFrame,
+					Columns:   inp.Columns,
+					NumRows:   limit,
+				},
+				Limit: limit,
+			}
+		}
+		return p
+
+	case dataframe.FilterPlan:
+		newLimit := dataframe.LimitPlan{
+			Input: inp.Input,
+			Limit: p.Limit,
+		}
+		optimizedLimit := o.pushDownLimit(newLimit)
+		return dataframe.LimitPlan{
+			Input: dataframe.FilterPlan{
+				Input:     optimizedLimit.Input,
+				Condition: inp.Condition,
+			},
+			Limit: p.Limit,
+		}
+
+	case dataframe.WithColumnsPlan:
+		newLimit := dataframe.LimitPlan{
+			Input: inp.Input,
+			Limit: p.Limit,
+		}
+		optimizedLimit := o.pushDownLimit(newLimit)
+		return dataframe.LimitPlan{
+			Input: dataframe.WithColumnsPlan{
+				Input:   optimizedLimit.Input,
+				Columns: inp.Columns,
+			},
+			Limit: p.Limit,
+		}
+
+	case dataframe.SelectPlan:
+		newLimit := dataframe.LimitPlan{
+			Input: inp.Input,
+			Limit: p.Limit,
+		}
+		optimizedLimit := o.pushDownLimit(newLimit)
+		return dataframe.LimitPlan{
+			Input: dataframe.SelectPlan{
+				Input:   optimizedLimit.Input,
+				Columns: inp.Columns,
+			},
+			Limit: p.Limit,
+		}
+	}
+
+	return p
+}
+
+func (o *Optimizer) pushDownTail(p dataframe.TailPlan) dataframe.TailPlan {
+	input := p.Input
+
+	switch inp := input.(type) {
+	case dataframe.ScanPlan:
+		n := p.N
+		totalRows := inp.DataFrame.NumRows()
+		if n >= totalRows {
+			return p
+		}
+		headLimit := totalRows - n
+		return dataframe.TailPlan{
+			Input: dataframe.ScanPlan{
+				DataFrame: inp.DataFrame,
+				Columns:   inp.Columns,
+				NumRows:   headLimit,
+			},
+			N: p.N,
+		}
+
+	case dataframe.FilterPlan:
+		newTail := dataframe.TailPlan{
+			Input: inp.Input,
+			N:     p.N,
+		}
+		optimizedTail := o.pushDownTail(newTail)
+		return dataframe.TailPlan{
+			Input: dataframe.FilterPlan{
+				Input:     optimizedTail.Input,
+				Condition: inp.Condition,
+			},
+			N: p.N,
+		}
+
+	case dataframe.WithColumnsPlan:
+		newTail := dataframe.TailPlan{
+			Input: inp.Input,
+			N:     p.N,
+		}
+		optimizedTail := o.pushDownTail(newTail)
+		return dataframe.TailPlan{
+			Input: dataframe.WithColumnsPlan{
+				Input:   optimizedTail.Input,
+				Columns: inp.Columns,
+			},
+			N: p.N,
+		}
+
+	case dataframe.SelectPlan:
+		newTail := dataframe.TailPlan{
+			Input: inp.Input,
+			N:     p.N,
+		}
+		optimizedTail := o.pushDownTail(newTail)
+		return dataframe.TailPlan{
+			Input: dataframe.SelectPlan{
+				Input:   optimizedTail.Input,
+				Columns: inp.Columns,
+			},
+			N: p.N,
+		}
+
+	case dataframe.LimitPlan:
+		combinedLimit := inp.Limit + p.N
+		newLimit := dataframe.LimitPlan{
+			Input: inp.Input,
+			Limit: combinedLimit,
+		}
+		optimizedLimit := o.pushDownLimit(newLimit)
+		return dataframe.TailPlan{
+			Input: optimizedLimit.Input,
+			N:     p.N,
+		}
 	}
 
 	return p

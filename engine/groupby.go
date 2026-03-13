@@ -352,3 +352,166 @@ func argmaxFloat(col *series.Float64Series, indices []int) float64 {
 	}
 	return float64(maxIdx)
 }
+
+func buildGroups(df *dataframe.DataFrame, keys []string) (map[string][]int, error) {
+	if len(keys) != 1 {
+		return nil, errors.New("only single-key groupby is currently supported")
+	}
+
+	keyCol, err := df.ColByName(keys[0])
+	if err != nil {
+		return nil, err
+	}
+
+	strKeyCol, ok := keyCol.(*series.StringSeries)
+	if !ok {
+		return nil, errors.New("groupby key must be a string column")
+	}
+
+	groups := make(map[string][]int)
+	for i := 0; i < strKeyCol.Len(); i++ {
+		if !strKeyCol.IsNull(i) {
+			val := strKeyCol.Value(i)
+			groups[val] = append(groups[val], i)
+		}
+	}
+
+	return groups, nil
+}
+
+func subsetSeriesByIndices(col series.Series, indices []int) series.Series {
+	switch c := col.(type) {
+	case *series.Int64Series:
+		values := make([]int64, len(indices))
+		valid := make([]bool, len(indices))
+		for i, idx := range indices {
+			values[i] = c.Value(idx)
+			valid[i] = !c.IsNull(idx)
+		}
+		return series.NewInt64Series(c.Name(), memory.DefaultAllocator, values, valid)
+	case *series.Float64Series:
+		values := make([]float64, len(indices))
+		valid := make([]bool, len(indices))
+		for i, idx := range indices {
+			values[i] = c.Value(idx)
+			valid[i] = !c.IsNull(idx)
+		}
+		return series.NewFloat64Series(c.Name(), memory.DefaultAllocator, values, valid)
+	case *series.StringSeries:
+		values := make([]string, len(indices))
+		valid := make([]bool, len(indices))
+		for i, idx := range indices {
+			values[i] = c.Value(idx)
+			valid[i] = !c.IsNull(idx)
+		}
+		return series.NewStringSeries(c.Name(), memory.DefaultAllocator, values, valid)
+	case *series.BooleanSeries:
+		values := make([]bool, len(indices))
+		valid := make([]bool, len(indices))
+		for i, idx := range indices {
+			values[i] = c.Value(idx)
+			valid[i] = !c.IsNull(idx)
+		}
+		return series.NewBooleanSeries(c.Name(), memory.DefaultAllocator, values, valid)
+	default:
+		return col
+	}
+}
+
+func applyGroupByHead(df *dataframe.DataFrame, keys []string, n int) (*dataframe.DataFrame, error) {
+	groups, err := buildGroups(df, keys)
+	if err != nil {
+		return nil, err
+	}
+
+	result := dataframe.New()
+
+	var sortedKeys []string
+	for k := range groups {
+		sortedKeys = append(sortedKeys, k)
+	}
+	sort.Strings(sortedKeys)
+
+	allIndices := make([]int, 0)
+	for _, key := range sortedKeys {
+		indices := groups[key]
+		count := n
+		if count > len(indices) {
+			count = len(indices)
+		}
+		allIndices = append(allIndices, indices[:count]...)
+	}
+
+	for i := 0; i < df.NumCols(); i++ {
+		col, err := df.Col(i)
+		if err != nil {
+			return nil, err
+		}
+		subCol := subsetSeriesByIndices(col, allIndices)
+		result.AddSeries(subCol)
+	}
+
+	return result, nil
+}
+
+func applyGroupByTail(df *dataframe.DataFrame, keys []string, n int) (*dataframe.DataFrame, error) {
+	groups, err := buildGroups(df, keys)
+	if err != nil {
+		return nil, err
+	}
+
+	result := dataframe.New()
+
+	var sortedKeys []string
+	for k := range groups {
+		sortedKeys = append(sortedKeys, k)
+	}
+	sort.Strings(sortedKeys)
+
+	allIndices := make([]int, 0)
+	for _, key := range sortedKeys {
+		indices := groups[key]
+		count := n
+		if count > len(indices) {
+			count = len(indices)
+		}
+		start := len(indices) - count
+		allIndices = append(allIndices, indices[start:]...)
+	}
+
+	for i := 0; i < df.NumCols(); i++ {
+		col, err := df.Col(i)
+		if err != nil {
+			return nil, err
+		}
+		subCol := subsetSeriesByIndices(col, allIndices)
+		result.AddSeries(subCol)
+	}
+
+	return result, nil
+}
+
+func applyGroupByGroups(df *dataframe.DataFrame, keys []string) (*dataframe.DataFrame, error) {
+	groups, err := buildGroups(df, keys)
+	if err != nil {
+		return nil, err
+	}
+
+	result := dataframe.New()
+
+	var sortedKeys []string
+	for k := range groups {
+		sortedKeys = append(sortedKeys, k)
+	}
+	sort.Strings(sortedKeys)
+
+	result.AddSeries(series.NewStringSeries(keys[0], memory.DefaultAllocator, sortedKeys, nil))
+
+	rowCounts := make([]int64, len(sortedKeys))
+	for i, key := range sortedKeys {
+		rowCounts[i] = int64(len(groups[key]))
+	}
+	result.AddSeries(series.NewInt64Series("__row_count", memory.DefaultAllocator, rowCounts, nil))
+
+	return result, nil
+}

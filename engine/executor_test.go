@@ -794,3 +794,78 @@ func TestWindowPlanExplain(t *testing.T) {
 		t.Error("Expected non-empty explain output")
 	}
 }
+
+func TestExecuteRollingSum(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3, 4}, nil))
+
+	result, err := applyWithColumns(df, []expr.Expr{
+		expr.RollingSum(expr.Col("a"), 2, 2).Alias("rolling"),
+	})
+	if err != nil {
+		t.Fatalf("applyWithColumns failed: %v", err)
+	}
+
+	resCol, err := result.ColByName("rolling")
+	if err != nil {
+		t.Fatalf("ColByName failed: %v", err)
+	}
+	res := resCol.(*series.Float64Series)
+
+	if res.IsNull(0) == false {
+		t.Error("Expected null at index 0")
+	}
+	if res.Value(1) != 3 {
+		t.Errorf("Expected 3 at index 1, got %v", res.Value(1))
+	}
+}
+
+func TestExecuteRollingMean(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewFloat64Series("a", memory.DefaultAllocator, []float64{1, 2, 3, 4}, nil))
+
+	result, err := applyWithColumns(df, []expr.Expr{
+		expr.RollingMean(expr.Col("a"), 2, 2).Alias("rolling"),
+	})
+	if err != nil {
+		t.Fatalf("applyWithColumns failed: %v", err)
+	}
+
+	resCol, err := result.ColByName("rolling")
+	if err != nil {
+		t.Fatalf("ColByName failed: %v", err)
+	}
+	res := resCol.(*series.Float64Series)
+
+	if res.Value(1) != 1.5 {
+		t.Errorf("Expected 1.5 at index 1, got %v", res.Value(1))
+	}
+}
+
+func TestExecuteCumSum(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+
+	result, err := applyWithColumns(df, []expr.Expr{
+		expr.CumSum(expr.Col("a")).Alias("cumsum"),
+	})
+	if err != nil {
+		t.Fatalf("applyWithColumns failed: %v", err)
+	}
+
+	resCol, err := result.ColByName("cumsum")
+	if err != nil {
+		t.Fatalf("ColByName failed: %v", err)
+	}
+	res := resCol.(*series.Float64Series)
+
+	if res.Value(0) != 1 {
+		t.Errorf("Expected 1 at index 0, got %v", res.Value(0))
+	}
+	if res.Value(1) != 3 {
+		t.Errorf("Expected 3 at index 1, got %v", res.Value(1))
+	}
+	if res.Value(2) != 6 {
+		t.Errorf("Expected 6 at index 2, got %v", res.Value(2))
+	}
+}

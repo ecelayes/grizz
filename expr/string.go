@@ -141,6 +141,40 @@ func ContainsRegex(expr Expr, pattern Expr) ContainsRegexExpr {
 	return ContainsRegexExpr{Expr: expr, Pattern: pattern}
 }
 
+type ExtractExpr struct {
+	Expr    Expr
+	Pattern Expr
+}
+
+func (e ExtractExpr) String() string {
+	return fmt.Sprintf("Extract(%s, %s)", e.Expr.String(), e.Pattern.String())
+}
+
+func (e ExtractExpr) Alias(name string) AliasExpr {
+	return AliasExpr{Expr: e, Alias: name}
+}
+
+func Extract(expr Expr, pattern Expr) ExtractExpr {
+	return ExtractExpr{Expr: expr, Pattern: pattern}
+}
+
+type FindExpr struct {
+	Expr   Expr
+	Substr Expr
+}
+
+func (e FindExpr) String() string {
+	return fmt.Sprintf("Find(%s, %s)", e.Expr.String(), e.Substr.String())
+}
+
+func (e FindExpr) Alias(name string) AliasExpr {
+	return AliasExpr{Expr: e, Alias: name}
+}
+
+func Find(expr Expr, substr Expr) FindExpr {
+	return FindExpr{Expr: expr, Substr: substr}
+}
+
 type SliceExpr struct {
 	Expr   Expr
 	Start  Expr

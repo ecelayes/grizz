@@ -60,3 +60,73 @@ func TestLazyFrameSelectExplain(t *testing.T) {
 		t.Error("Expected non-empty explain string")
 	}
 }
+
+func TestLazyFrameHead(t *testing.T) {
+	df := New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3, 4, 5}, nil))
+
+	lf := df.Lazy()
+	result := lf.Head(3)
+
+	if result == nil {
+		t.Error("Expected LazyFrame not nil")
+	}
+
+	explain := result.Explain()
+	if len(explain) == 0 {
+		t.Error("Expected non-empty explain")
+	}
+}
+
+func TestLazyFrameTail(t *testing.T) {
+	df := New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3, 4, 5}, nil))
+
+	lf := df.Lazy()
+	result := lf.Tail(2)
+
+	if result == nil {
+		t.Error("Expected LazyFrame not nil")
+	}
+
+	explain := result.Explain()
+	if len(explain) == 0 {
+		t.Error("Expected non-empty explain")
+	}
+}
+
+func TestLazyFrameGroupByHead(t *testing.T) {
+	df := New()
+	df.AddSeries(series.NewStringSeries("group", memory.DefaultAllocator, []string{"a", "a", "b", "b"}, nil))
+	df.AddSeries(series.NewInt64Series("value", memory.DefaultAllocator, []int64{1, 2, 3, 4}, nil))
+
+	lf := df.Lazy()
+	result := lf.GroupBy("group").Head(1)
+
+	if result == nil {
+		t.Error("Expected LazyGroupBy not nil")
+	}
+
+	explain := result.Explain()
+	if len(explain) == 0 {
+		t.Error("Expected non-empty explain")
+	}
+}
+
+func TestLazyFrameGroupByTail(t *testing.T) {
+	df := New()
+	df.AddSeries(series.NewStringSeries("group", memory.DefaultAllocator, []string{"a", "a", "b", "b"}, nil))
+	df.AddSeries(series.NewInt64Series("value", memory.DefaultAllocator, []int64{1, 2, 3, 4}, nil))
+
+	lf := df.Lazy()
+	result := lf.GroupBy("group").Tail(1)
+
+	if result == nil {
+		t.Error("Expected LazyGroupBy not nil")
+	}
+
+	explain := result.Explain()
+	if len(explain) == 0 {
+		t.Error("Expected non-empty explain")
+	}
+}

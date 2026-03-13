@@ -60,3 +60,50 @@ func applyProjection(df *dataframe.DataFrame, columns []expr.Expr) (*dataframe.D
 
 	return result, nil
 }
+
+func applyProjectionAtScan(df *dataframe.DataFrame, columns []string) *dataframe.DataFrame {
+	result := dataframe.New()
+	alloc := memory.DefaultAllocator
+
+	for _, colName := range columns {
+		originalCol, err := df.ColByName(colName)
+		if err != nil {
+			continue
+		}
+
+		switch typedCol := originalCol.(type) {
+		case *series.StringSeries:
+			var copied []string
+			for j := 0; j < typedCol.Len(); j++ {
+				copied = append(copied, typedCol.Value(j))
+			}
+			newCol := series.NewStringSeries(typedCol.Name(), alloc, copied, nil)
+			result.AddSeries(newCol)
+
+		case *series.Int64Series:
+			var copied []int64
+			for j := 0; j < typedCol.Len(); j++ {
+				copied = append(copied, typedCol.Value(j))
+			}
+			result.AddSeries(series.NewInt64Series(typedCol.Name(), alloc, copied, nil))
+
+		case *series.Float64Series:
+			var copied []float64
+			for j := 0; j < typedCol.Len(); j++ {
+				copied = append(copied, typedCol.Value(j))
+			}
+			newCol := series.NewFloat64Series(typedCol.Name(), alloc, copied, nil)
+			result.AddSeries(newCol)
+
+		case *series.BooleanSeries:
+			var copied []bool
+			for j := 0; j < typedCol.Len(); j++ {
+				copied = append(copied, typedCol.Value(j))
+			}
+			newCol := series.NewBooleanSeries(typedCol.Name(), alloc, copied, nil)
+			result.AddSeries(newCol)
+		}
+	}
+
+	return result
+}

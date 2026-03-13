@@ -319,3 +319,65 @@ func applySplit(df *dataframe.DataFrame, e expr.SplitExpr, alloc memory.Allocato
 	}
 	return series.NewStringSeries(strCol.Name(), alloc, splitVals, splitValid), nil
 }
+
+func applyExtract(df *dataframe.DataFrame, e expr.ExtractExpr, alloc memory.Allocator) (series.Series, error) {
+	col, err := df.ColByName(e.Expr.(expr.Column).Name)
+	if err != nil {
+		return nil, err
+	}
+	strCol, ok := col.(*series.StringSeries)
+	if !ok {
+		return nil, errors.New("Extract requires string column")
+	}
+	pattern := e.Pattern.(expr.Literal).Value.(string)
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	var extractVals []string
+	var extractValid []bool
+	for j := 0; j < strCol.Len(); j++ {
+		if strCol.IsNull(j) {
+			extractVals = append(extractVals, "")
+			extractValid = append(extractValid, false)
+		} else {
+			match := re.FindStringSubmatch(strCol.Value(j))
+			if match == nil {
+				extractVals = append(extractVals, "")
+				extractValid = append(extractValid, false)
+			} else if len(match) > 1 {
+				extractVals = append(extractVals, match[1])
+				extractValid = append(extractValid, true)
+			} else {
+				extractVals = append(extractVals, match[0])
+				extractValid = append(extractValid, true)
+			}
+		}
+	}
+	return series.NewStringSeries("extract", alloc, extractVals, extractValid), nil
+}
+
+func applyFind(df *dataframe.DataFrame, e expr.FindExpr, alloc memory.Allocator) (series.Series, error) {
+	col, err := df.ColByName(e.Expr.(expr.Column).Name)
+	if err != nil {
+		return nil, err
+	}
+	strCol, ok := col.(*series.StringSeries)
+	if !ok {
+		return nil, errors.New("Find requires string column")
+	}
+	substr := e.Substr.(expr.Literal).Value.(string)
+	var findVals []int64
+	var findValid []bool
+	for j := 0; j < strCol.Len(); j++ {
+		if strCol.IsNull(j) {
+			findVals = append(findVals, 0)
+			findValid = append(findValid, false)
+		} else {
+			pos := strings.Index(strCol.Value(j), substr)
+			findVals = append(findVals, int64(pos))
+			findValid = append(findValid, true)
+		}
+	}
+	return series.NewInt64Series("find", alloc, findVals, findValid), nil
+}

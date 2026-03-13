@@ -88,3 +88,49 @@ func TestApplyProjectionNonExistentColumn(t *testing.T) {
 		t.Error("Expected error for non-existent column in projection")
 	}
 }
+
+func TestApplyProjectionAtScan(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+	df.AddSeries(series.NewFloat64Series("b", memory.DefaultAllocator, []float64{1.0, 2.0, 3.0}, nil))
+	df.AddSeries(series.NewStringSeries("c", memory.DefaultAllocator, []string{"x", "y", "z"}, nil))
+
+	result := applyProjectionAtScan(df, []string{"a", "c"})
+
+	if result.NumCols() != 2 {
+		t.Errorf("Expected 2 columns, got %d", result.NumCols())
+	}
+
+	colA, err := result.ColByName("a")
+	if err != nil {
+		t.Fatalf("ColByName failed: %v", err)
+	}
+	if colA.Len() != 3 {
+		t.Errorf("Expected 3 rows, got %d", colA.Len())
+	}
+}
+
+func TestApplyProjectionAtScanMissingColumn(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+
+	result := applyProjectionAtScan(df, []string{"a", "nonexistent"})
+
+	if result.NumCols() != 1 {
+		t.Errorf("Expected 1 column, got %d", result.NumCols())
+	}
+}
+
+func TestApplyProjectionAtScanAllTypes(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3}, nil))
+	df.AddSeries(series.NewFloat64Series("b", memory.DefaultAllocator, []float64{1.0, 2.0, 3.0}, nil))
+	df.AddSeries(series.NewStringSeries("c", memory.DefaultAllocator, []string{"x", "y", "z"}, nil))
+	df.AddSeries(series.NewBooleanSeries("d", memory.DefaultAllocator, []bool{true, false, true}, nil))
+
+	result := applyProjectionAtScan(df, []string{"a", "b", "c", "d"})
+
+	if result.NumCols() != 4 {
+		t.Errorf("Expected 4 columns, got %d", result.NumCols())
+	}
+}
