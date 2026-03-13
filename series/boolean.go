@@ -51,3 +51,21 @@ func (s *BooleanSeries) Release() {
 		s.data.Release()
 	}
 }
+
+func (s *BooleanSeries) Any() bool {
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) && s.Value(i) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *BooleanSeries) All() bool {
+	for i := 0; i < s.Len(); i++ {
+		if !s.IsNull(i) && !s.Value(i) {
+			return false
+		}
+	}
+	return s.Len() > 0
+}

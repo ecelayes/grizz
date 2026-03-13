@@ -80,3 +80,7 @@ func (df *DataFrame) VStack(other *DataFrame) (*DataFrame, error) {
 
 	return result, nil
 }
+
+func (df *DataFrame) Append(other *DataFrame) (*DataFrame, error) {
+	return df.VStack(other)
+}
