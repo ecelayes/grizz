@@ -42,6 +42,12 @@ func evaluateExpression(df *dataframe.DataFrame, colExpr expr.Expr, alloc memory
 			result.SetName(e.Alias)
 		}
 		return result, nil
+	case expr.Column:
+		col, err := df.ColByName(e.Name)
+		if err != nil {
+			return nil, err
+		}
+		return col, nil
 	case expr.ArithmeticOp:
 		return applyArithmetic(df, e, alloc)
 	case expr.FillNullExpr:
@@ -84,6 +90,8 @@ func evaluateExpression(df *dataframe.DataFrame, colExpr expr.Expr, alloc memory
 		return applyCast(df, e, alloc)
 	case expr.OtherwiseExpr:
 		return applyOtherwise(df, e, alloc)
+	case expr.ThenExpr:
+		return applyThen(df, e, alloc)
 	case expr.BetweenExpr:
 		return applyBetween(df, e, alloc)
 	case expr.YearExpr:

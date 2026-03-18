@@ -6,12 +6,14 @@ A Polars-inspired DataFrame library for Go, built on Apache Arrow.
 
 - **Polars-like API**: Familiar syntax for Polars/Python users
 - **Lazy Evaluation**: Build complex queries efficiently with lazy DataFrames
+- **SQL Interface**: Query DataFrames using SQL syntax
 - **Apache Arrow Backend**: Efficient memory handling and zero-copy operations
 - **Rich Expression System**: Filter, transform, aggregate with expressions
-- **Multiple Data Types**: Int8-64, UInt8-64, Float64, String, Boolean, Binary with null support
+- **Selectors**: Flexible column selection with cs.All(), cs.Numeric(), cs.ByName(), etc.
+- **Multiple Data Types**: Int8-64, UInt8-64, Float32/64, String, Boolean, Binary with null support
 - **I/O Support**: CSV, JSON, Parquet, and Arrow IPC read/write
 - **Optimizers**: Projection pushdown and Slice pushdown for query optimization
-- **Advanced Operations**: Rolling windows, cumulative operations, window functions
+- **Advanced Operations**: Rolling windows, cumulative operations, window functions, time series
 
 ## Installation
 
@@ -29,6 +31,7 @@ import (
     "github.com/ecelayes/grizz/engine"
     "github.com/ecelayes/grizz/expr"
     "github.com/ecelayes/grizz/io/csv"
+    "github.com/ecelayes/grizz/sql"
 )
 
 func main() {
@@ -121,6 +124,11 @@ expr.Count("id")
 expr.Min("price")
 expr.Max("rating")
 expr.Mean("score")
+expr.Std("value")
+expr.Var("value")
+expr.Median("value")
+expr.Quantile("value", 0.5)
+expr.NUnique("id")
 ```
 
 ### Rolling Windows
@@ -150,6 +158,71 @@ expr.RowNumber()
 expr.Rank()
 expr.Lag(expr.Col("value"), 1)
 expr.Lead(expr.Col("value"), 1)
+```
+
+### SQL Interface
+
+```go
+import "github.com/ecelayes/grizz/sql"
+
+// Query DataFrame using SQL
+result, err := sql.SQL("SELECT name, age FROM users WHERE age > 18", df)
+
+// SQL supports:
+result, _ = sql.SQL("SELECT department, SUM(salary) FROM employees GROUP BY department", df)
+result, _ = sql.SQL("SELECT * FROM users ORDER BY name DESC LIMIT 10 OFFSET 5", df)
+result, _ = sql.SQL("SELECT CASE WHEN score >= 80 THEN 'Pass' ELSE 'Fail' END AS status FROM users", df)
+result, _ = sql.SQL("SELECT COUNT(DISTINCT department) FROM employees", df)
+```
+
+### Selectors
+
+```go
+// Select all columns
+df.Select(expr.All())
+
+// Select numeric columns only
+df.Select(expr.Numeric())
+
+// Select by name pattern
+df.Select(expr.ByName("col_*"))
+df.Select(expr.Contains("name"))
+
+// Combine with expressions
+df.Select(expr.All().Alias("prefix_"))
+```
+
+### Time Series
+
+```go
+// Exponentially Weighted Mean
+expr.EwmMean(expr.Col("value"), 0.5)
+
+// Difference
+expr.Diff(expr.Col("value"))
+expr.Diff(expr.Col("value"), 2)  // periods
+
+// Percentage change
+expr.PctChange(expr.Col("value"))
+
+// DateTime operations
+expr.Year(expr.Col("timestamp"))
+expr.Month(expr.Col("timestamp"))
+expr.Day(expr.Col("timestamp"))
+expr.Hour(expr.Col("timestamp"))
+```
+
+### Sampling
+
+```go
+// Sample n rows
+df.Sample(10, seed=42)
+
+// Sample by fraction
+df.SampleFrac(0.1, seed=42)
+
+// Shuffle
+df.Shuffle(seed=42)
 ```
 
 ### DataFrame Operations
@@ -236,6 +309,7 @@ grizz/
 ├── engine/      # Query execution engine
 ├── expr/        # Expression system
 ├── series/      # Column data types
+├── sql/         # SQL parser and engine
 └── io/          # CSV, JSON, Parquet I/O
 ```
 

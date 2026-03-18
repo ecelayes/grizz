@@ -266,13 +266,18 @@ func (o *Optimizer) pushDownProjection(p dataframe.SelectPlan) dataframe.SelectP
 		}
 
 	case dataframe.WithColumnsPlan:
-		newSelect := dataframe.SelectPlan{
-			Input:   inp.Input,
-			Columns: p.Columns,
+		colNames := extractColumnNamesWithAlias(inp.Columns)
+		if len(colNames) > 0 {
+			return dataframe.SelectPlan{
+				Input: dataframe.WithColumnsPlan{
+					Input:   inp.Input,
+					Columns: inp.Columns,
+				},
+				Columns: exprColsToExpr(colNames),
+			}
 		}
-		optimizedSelect := o.pushDownProjection(newSelect)
 		return dataframe.SelectPlan{
-			Input:   dataframe.WithColumnsPlan{Input: optimizedSelect.Input, Columns: inp.Columns},
+			Input:   inp,
 			Columns: p.Columns,
 		}
 
@@ -296,6 +301,26 @@ func extractColumnNames(columns []expr.Expr) []string {
 	for _, col := range columns {
 		if c, ok := col.(expr.Column); ok {
 			colNames = append(colNames, c.Name)
+		}
+	}
+	return colNames
+}
+
+func exprColsToExpr(colNames []string) []expr.Expr {
+	var cols []expr.Expr
+	for _, name := range colNames {
+		cols = append(cols, expr.Col(name))
+	}
+	return cols
+}
+
+func extractColumnNamesWithAlias(columns []expr.Expr) []string {
+	var colNames []string
+	for _, col := range columns {
+		if c, ok := col.(expr.Column); ok {
+			colNames = append(colNames, c.Name)
+		} else if alias, ok := col.(expr.AliasExpr); ok {
+			colNames = append(colNames, alias.Alias)
 		}
 	}
 	return colNames

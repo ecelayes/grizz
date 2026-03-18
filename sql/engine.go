@@ -2,11 +2,14 @@ package sql
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ecelayes/grizz/dataframe"
 	"github.com/ecelayes/grizz/engine"
 	"github.com/ecelayes/grizz/expr"
 )
+
+const defaultOffsetLimit = 1000000
 
 type Engine struct {
 	df *dataframe.DataFrame
@@ -70,7 +73,24 @@ func (e *Engine) Execute(stmt *SQLStatement) (*dataframe.DataFrame, error) {
 		if err != nil {
 			return nil, fmt.Errorf("select columns: %w", err)
 		}
-		lf = lf.Select(selects...)
+
+		hasNonColumn := false
+		for _, sel := range selects {
+			if _, isColumn := sel.(expr.Column); !isColumn {
+				hasNonColumn = true
+				break
+			}
+		}
+
+		if hasNonColumn {
+			intermediate, err := lf.Collect(engine.Execute)
+			if err != nil {
+				return nil, err
+			}
+			return e.applySelect(intermediate, stmt.Select)
+		} else {
+			lf = lf.Select(selects...)
+		}
 	}
 
 	if stmt.Having.Condition != nil {
@@ -92,12 +112,40 @@ func (e *Engine) Execute(stmt *SQLStatement) (*dataframe.DataFrame, error) {
 		}
 	}
 
-	if stmt.Limit.Count > 0 {
-		lf = lf.Limit(stmt.Limit.Count)
-	}
-
 	if stmt.Select.IsDistinct {
 		lf = lf.Distinct()
+	}
+
+	var result *dataframe.DataFrame
+	needsPostProcess := stmt.Offset.Count > 0
+
+	if needsPostProcess {
+		if stmt.Limit.Count > 0 {
+			lf = lf.Limit(stmt.Limit.Count + stmt.Offset.Count)
+		} else {
+			lf = lf.Limit(defaultOffsetLimit)
+		}
+
+		partialResult, err := lf.Collect(engine.Execute)
+		if err != nil {
+			return nil, err
+		}
+		offset := stmt.Offset.Count
+		if offset >= partialResult.NumRows() {
+			result = dataframe.New()
+		} else {
+			limitCount := stmt.Limit.Count
+			if limitCount > 0 {
+				result = partialResult.Slice(offset, limitCount)
+			} else {
+				result = partialResult.Slice(offset, partialResult.NumRows()-offset)
+			}
+		}
+		return result, nil
+	}
+
+	if stmt.Limit.Count > 0 {
+		lf = lf.Limit(stmt.Limit.Count)
 	}
 
 	result, err := lf.Collect(engine.Execute)
@@ -121,21 +169,35 @@ func (e *Engine) applySelect(df *dataframe.DataFrame, sc SelectClause) (*datafra
 		return nil, err
 	}
 
-	result := dataframe.New()
+	lf := df.Lazy()
+
+	hasNonColumn := false
 	for _, sel := range selects {
-		colExpr, ok := sel.(expr.Column)
-		if !ok {
-			return nil, fmt.Errorf("select supports only column references, got %T", sel)
-		}
-		col, err := df.ColByName(colExpr.Name)
-		if err != nil {
-			return nil, err
-		}
-		if err := result.AddSeries(col); err != nil {
-			return nil, err
+		if _, isColumn := sel.(expr.Column); !isColumn {
+			hasNonColumn = true
+			break
 		}
 	}
-	return result, nil
+
+	if hasNonColumn {
+		lf = lf.WithColumns(selects...)
+		var colExprs []expr.Expr
+		for _, sel := range selects {
+			if col, isColumn := sel.(expr.Column); isColumn {
+				colExprs = append(colExprs, col)
+			} else if aliasExpr, isAlias := sel.(expr.AliasExpr); isAlias {
+				colExprs = append(colExprs, expr.Col(aliasExpr.Alias))
+			} else {
+				colExprs = append(colExprs, sel)
+			}
+		}
+		if len(colExprs) > 0 {
+			lf = lf.Select(colExprs...)
+		}
+		return engine.Execute(lf.Plan())
+	}
+
+	return lf.Select(selects...).Collect(engine.Execute)
 }
 
 func (e *Engine) convertSelectColumns(sc SelectClause) ([]expr.Expr, error) {
@@ -182,6 +244,12 @@ func (e *Engine) convertExpression(ex Expression) (expr.Expr, error) {
 		return e.convertFunctionCall(sqlExpr)
 	case AggExpr:
 		return e.convertAggExpr(sqlExpr)
+	case CaseExpr:
+		return e.convertCaseExpr(sqlExpr)
+	case WhenClause:
+		return e.convertWhenClause(sqlExpr)
+	case IsNullExpr:
+		return e.convertIsNullExpr(sqlExpr)
 	default:
 		return nil, fmt.Errorf("unsupported expression type: %T", ex)
 	}
@@ -195,6 +263,17 @@ func (e *Engine) convertBinaryExpr(b BinaryExpr) (expr.Expr, error) {
 	right, err := e.convertExpression(b.Right)
 	if err != nil {
 		return nil, err
+	}
+
+	switch b.Op {
+	case "+":
+		return e.convertArithmetic(left, right, "+")
+	case "-":
+		return e.convertArithmetic(left, right, "-")
+	case "*":
+		return e.convertArithmetic(left, right, "*")
+	case "/":
+		return e.convertArithmetic(left, right, "/")
 	}
 
 	leftCol, leftOk := left.(expr.Column)
@@ -258,6 +337,45 @@ func (e *Engine) convertBinaryExpr(b BinaryExpr) (expr.Expr, error) {
 			}
 		}
 		return nil, fmt.Errorf("unsupported binary operator: %s", b.Op)
+	}
+}
+
+func (e *Engine) convertArithmetic(left, right expr.Expr, op string) (expr.Expr, error) {
+	switch op {
+	case "+":
+		if col, ok := left.(expr.Column); ok {
+			return col.Add(right), nil
+		}
+		if arith, ok := left.(expr.ArithmeticOp); ok {
+			return arith.Add(right), nil
+		}
+		return nil, fmt.Errorf("left side of + must be a column")
+	case "-":
+		if col, ok := left.(expr.Column); ok {
+			return col.Sub(right), nil
+		}
+		if arith, ok := left.(expr.ArithmeticOp); ok {
+			return arith.Sub(right), nil
+		}
+		return nil, fmt.Errorf("left side of - must be a column")
+	case "*":
+		if col, ok := left.(expr.Column); ok {
+			return col.Mul(right), nil
+		}
+		if arith, ok := left.(expr.ArithmeticOp); ok {
+			return arith.Mul(right), nil
+		}
+		return nil, fmt.Errorf("left side of * must be a column")
+	case "/":
+		if col, ok := left.(expr.Column); ok {
+			return col.Div(right), nil
+		}
+		if arith, ok := left.(expr.ArithmeticOp); ok {
+			return arith.Div(right), nil
+		}
+		return nil, fmt.Errorf("left side of / must be a column")
+	default:
+		return nil, fmt.Errorf("unsupported arithmetic operator: %s", op)
 	}
 }
 
@@ -393,26 +511,99 @@ func (e *Engine) convertFunctionCall(f FunctionCallExpr) (expr.Expr, error) {
 		return nil, err
 	}
 
-	col, ok := argExpr.(expr.Column)
-	if !ok {
-		return nil, fmt.Errorf("function arguments must be column references")
-	}
+	colName := e.getColumnName(argExpr)
+	upperName := strings.ToUpper(f.Name)
 
-	upperName := f.Name
 	switch upperName {
-	case "COUNT":
-		return expr.Count(col.Name), nil
-	case "SUM":
-		return expr.Sum(col.Name), nil
-	case "MIN":
-		return expr.Min(col.Name), nil
-	case "MAX":
-		return expr.Max(col.Name), nil
-	case "MEAN":
-		return expr.Mean(col.Name), nil
+	case "COUNT", "SUM", "MIN", "MAX", "MEAN", "STDDEV", "VARIANCE", "MEDIAN":
+		return convertAggFunc(upperName, colName, 0.5, false)
+	case "QUANTILE":
+		if len(f.Args) < 2 {
+			return nil, fmt.Errorf("QUANTILE requires a second argument for the quantile value")
+		}
+		qLit, ok := f.Args[1].(Literal)
+		if !ok {
+			return nil, fmt.Errorf("QUANTILE second argument must be a literal")
+		}
+		q, ok := qLit.Value.(float64)
+		if !ok {
+			q = float64(qLit.Value.(int64))
+		}
+		return convertAggFunc(upperName, colName, q, false)
+	case "UPPER":
+		if col, ok := argExpr.(expr.Column); ok {
+			return expr.Upper(col), nil
+		}
+		return nil, fmt.Errorf("UPPER requires a column argument")
+	case "LOWER":
+		if col, ok := argExpr.(expr.Column); ok {
+			return expr.Lower(col), nil
+		}
+		return nil, fmt.Errorf("LOWER requires a column argument")
+	case "TRIM":
+		if col, ok := argExpr.(expr.Column); ok {
+			return expr.Trim(col), nil
+		}
+		return nil, fmt.Errorf("TRIM requires a column argument")
+	case "LENGTH":
+		if col, ok := argExpr.(expr.Column); ok {
+			return expr.Length(col), nil
+		}
+		return nil, fmt.Errorf("LENGTH requires a column argument")
+	case "SUBSTRING":
+		if col, ok := argExpr.(expr.Column); ok {
+			if len(f.Args) < 3 {
+				return nil, fmt.Errorf("SUBSTRING requires start and length arguments")
+			}
+			startLit, ok := f.Args[1].(Literal)
+			if !ok {
+				return nil, fmt.Errorf("SUBSTRING start must be a literal")
+			}
+			lengthLit, ok := f.Args[2].(Literal)
+			if !ok {
+				return nil, fmt.Errorf("SUBSTRING length must be a literal")
+			}
+			start, ok := startLit.Value.(int64)
+			if !ok {
+				return nil, fmt.Errorf("SUBSTRING start must be an integer")
+			}
+			length, ok := lengthLit.Value.(int64)
+			if !ok {
+				return nil, fmt.Errorf("SUBSTRING length must be an integer")
+			}
+			return expr.Slice(col, expr.Lit(start), expr.Lit(length)), nil
+		}
+		return nil, fmt.Errorf("SUBSTRING requires a column argument")
+	case "YEAR":
+		if col, ok := argExpr.(expr.Column); ok {
+			return expr.Year(col), nil
+		}
+		return nil, fmt.Errorf("YEAR requires a column argument")
+	case "MONTH":
+		if col, ok := argExpr.(expr.Column); ok {
+			return expr.Month(col), nil
+		}
+		return nil, fmt.Errorf("MONTH requires a column argument")
+	case "DAY":
+		if col, ok := argExpr.(expr.Column); ok {
+			return expr.Day(col), nil
+		}
+		return nil, fmt.Errorf("DAY requires a column argument")
+	case "HOUR":
+		if col, ok := argExpr.(expr.Column); ok {
+			return expr.Hour(col), nil
+		}
+		return nil, fmt.Errorf("HOUR requires a column argument")
 	default:
 		return nil, fmt.Errorf("unsupported function: %s", f.Name)
 	}
+}
+
+func (e *Engine) getColumnName(argExpr expr.Expr) string {
+	if col, ok := argExpr.(expr.Column); ok {
+		return col.Name
+	}
+	return ""
 }
 
 func (e *Engine) convertAggExpr(a AggExpr) (expr.Expr, error) {
@@ -421,19 +612,34 @@ func (e *Engine) convertAggExpr(a AggExpr) (expr.Expr, error) {
 		return nil, fmt.Errorf("aggregate expression must be a column reference")
 	}
 
-	switch a.Func {
+	return convertAggFunc(a.Func, colRef.Name, 0.5, a.Distinct)
+}
+
+func convertAggFunc(funcName, colName string, quantile float64, distinct bool) (expr.Expr, error) {
+	switch strings.ToUpper(funcName) {
 	case "COUNT":
-		return expr.Count(colRef.Name), nil
+		if distinct {
+			return expr.NUnique(colName), nil
+		}
+		return expr.Count(colName), nil
 	case "SUM":
-		return expr.Sum(colRef.Name), nil
+		return expr.Sum(colName), nil
 	case "MIN":
-		return expr.Min(colRef.Name), nil
+		return expr.Min(colName), nil
 	case "MAX":
-		return expr.Max(colRef.Name), nil
+		return expr.Max(colName), nil
 	case "MEAN":
-		return expr.Mean(colRef.Name), nil
+		return expr.Mean(colName), nil
+	case "STDDEV":
+		return expr.Std(colName), nil
+	case "VARIANCE":
+		return expr.Var(colName), nil
+	case "MEDIAN":
+		return expr.Median(colName), nil
+	case "QUANTILE":
+		return expr.Quantile(colName, quantile), nil
 	default:
-		return nil, fmt.Errorf("unsupported aggregate function: %s", a.Func)
+		return nil, fmt.Errorf("unsupported aggregate function: %s", funcName)
 	}
 }
 
@@ -470,9 +676,10 @@ func (e *Engine) applyGroupBy(lf *dataframe.LazyFrame, stmt *SQLStatement) (*dat
 	for _, selCol := range stmt.Select.Columns {
 		if selCol.IsAgg {
 			aggExpr, err := e.convertAggExpr(AggExpr{
-				Func:  selCol.AggFunc,
-				Expr:  selCol.Expr,
-				Alias: selCol.Alias,
+				Func:     selCol.AggFunc,
+				Expr:     selCol.Expr,
+				Alias:    selCol.Alias,
+				Distinct: selCol.Distinct,
 			})
 			if err != nil {
 				return nil, err
@@ -490,4 +697,64 @@ func (e *Engine) applyGroupBy(lf *dataframe.LazyFrame, stmt *SQLStatement) (*dat
 	}
 
 	return lf.GroupBy(groupCols...).Agg(aggs...), nil
+}
+
+func (e *Engine) convertCaseExpr(c CaseExpr) (expr.Expr, error) {
+	if len(c.Whens) == 0 {
+		return nil, fmt.Errorf("CASE expression requires at least one WHEN clause")
+	}
+
+	if len(c.Whens) == 1 && c.Else == nil {
+		condExpr, err := e.convertExpression(c.Whens[0].Condition)
+		if err != nil {
+			return nil, err
+		}
+		thenExpr, err := e.convertExpression(c.Whens[0].Then)
+		if err != nil {
+			return nil, err
+		}
+		return expr.When(condExpr).Then(thenExpr), nil
+	}
+
+	condExpr, err := e.convertExpression(c.Whens[0].Condition)
+	if err != nil {
+		return nil, err
+	}
+	thenExpr, err := e.convertExpression(c.Whens[0].Then)
+	if err != nil {
+		return nil, err
+	}
+
+	result := expr.When(condExpr).Then(thenExpr)
+
+	if c.Else != nil {
+		elseExpr, err := e.convertExpression(c.Else)
+		if err != nil {
+			return nil, err
+		}
+		return result.Otherwise(elseExpr), nil
+	}
+
+	return result, nil
+}
+
+func (e *Engine) convertWhenClause(w WhenClause) (expr.Expr, error) {
+	return e.convertExpression(w.Then)
+}
+
+func (e *Engine) convertIsNullExpr(i IsNullExpr) (expr.Expr, error) {
+	subExpr, err := e.convertExpression(i.Expr)
+	if err != nil {
+		return nil, err
+	}
+
+	col, ok := subExpr.(expr.Column)
+	if !ok {
+		return nil, fmt.Errorf("IS NULL only supports column expressions")
+	}
+
+	if i.Negated {
+		return expr.Not(expr.IsNull(col)), nil
+	}
+	return expr.IsNull(col), nil
 }

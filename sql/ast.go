@@ -38,6 +38,31 @@ const (
 	TokenTRUE
 	TokenWHERE
 
+	TokenSTDDEV
+	TokenVARIANCE
+	TokenMEDIAN
+	TokenQUANTILE
+	TokenCASE
+	TokenWHEN
+	TokenTHEN
+	TokenELSE
+	TokenEND
+	TokenOFFSET
+	TokenYEAR
+	TokenMONTH
+	TokenDAY
+	TokenHOUR
+	TokenUPPER
+	TokenLOWER
+	TokenTRIM
+	TokenLENGTH
+	TokenSUBSTRING
+	TokenJOIN
+	TokenINNER
+	TokenLEFT
+	TokenRIGHT
+	TokenON
+
 	TokenEQ
 	TokenNE
 	TokenLT
@@ -128,6 +153,54 @@ func (t TokenType) TokenTypeString() string {
 		return "TRUE"
 	case TokenWHERE:
 		return "WHERE"
+	case TokenSTDDEV:
+		return "STDDEV"
+	case TokenVARIANCE:
+		return "VARIANCE"
+	case TokenMEDIAN:
+		return "MEDIAN"
+	case TokenQUANTILE:
+		return "QUANTILE"
+	case TokenCASE:
+		return "CASE"
+	case TokenWHEN:
+		return "WHEN"
+	case TokenTHEN:
+		return "THEN"
+	case TokenELSE:
+		return "ELSE"
+	case TokenEND:
+		return "END"
+	case TokenOFFSET:
+		return "OFFSET"
+	case TokenYEAR:
+		return "YEAR"
+	case TokenMONTH:
+		return "MONTH"
+	case TokenDAY:
+		return "DAY"
+	case TokenHOUR:
+		return "HOUR"
+	case TokenUPPER:
+		return "UPPER"
+	case TokenLOWER:
+		return "LOWER"
+	case TokenTRIM:
+		return "TRIM"
+	case TokenLENGTH:
+		return "LENGTH"
+	case TokenSUBSTRING:
+		return "SUBSTRING"
+	case TokenJOIN:
+		return "JOIN"
+	case TokenINNER:
+		return "INNER"
+	case TokenLEFT:
+		return "LEFT"
+	case TokenRIGHT:
+		return "RIGHT"
+	case TokenON:
+		return "ON"
 	case TokenEQ:
 		return "="
 	case TokenNE:
@@ -169,6 +242,7 @@ type SQLStatement struct {
 	Having  HavingClause
 	OrderBy OrderByClause
 	Limit   LimitClause
+	Offset  OffsetClause
 }
 
 type SelectClause struct {
@@ -177,10 +251,11 @@ type SelectClause struct {
 }
 
 type SelectColumn struct {
-	Expr    Expression
-	Alias   string
-	IsAgg   bool
-	AggFunc string
+	Expr     Expression
+	Alias    string
+	IsAgg    bool
+	AggFunc  string
+	Distinct bool
 }
 
 type FromClause struct {
@@ -209,6 +284,10 @@ type OrderByColumn struct {
 }
 
 type LimitClause struct {
+	Count int
+}
+
+type OffsetClause struct {
 	Count int
 }
 
@@ -281,9 +360,32 @@ type FunctionCallExpr struct {
 func (f FunctionCallExpr) isExpression() {}
 
 type AggExpr struct {
-	Func  string
-	Expr  Expression
-	Alias string
+	Func     string
+	Expr     Expression
+	Alias    string
+	Distinct bool
 }
 
 func (a AggExpr) isExpression() {}
+
+type CaseExpr struct {
+	Expr  Expression
+	Whens []WhenClause
+	Else  Expression
+}
+
+func (c CaseExpr) isExpression() {}
+
+type WhenClause struct {
+	Condition Expression
+	Then      Expression
+}
+
+func (w WhenClause) isExpression() {}
+
+type IsNullExpr struct {
+	Expr    Expression
+	Negated bool
+}
+
+func (i IsNullExpr) isExpression() {}

@@ -95,6 +95,21 @@ func (p *Parser) Parse() (*SQLStatement, error) {
 		}
 	}
 
+	if p.match(TokenOFFSET) {
+		if !p.check(TokenNumber) {
+			return nil, errors.New("expected number after OFFSET")
+		}
+		tok := p.advance()
+		switch v := tok.Value.(type) {
+		case int:
+			stmt.Offset.Count = v
+		case int64:
+			stmt.Offset.Count = int(v)
+		default:
+			return nil, errors.New("invalid OFFSET value")
+		}
+	}
+
 	if !p.isAtEnd() {
 		return nil, errors.New("unexpected tokens after query")
 	}
@@ -135,9 +150,23 @@ func (p *Parser) parseSelectColumn() (SelectColumn, error) {
 	case ColumnRef:
 		col.Expr = e
 	case FunctionCallExpr:
-		col.IsAgg = true
-		col.AggFunc = strings.ToUpper(e.Name)
-		col.Expr = e.Args[0]
+		upperName := strings.ToUpper(e.Name)
+		if upperName == "COUNT" || upperName == "SUM" || upperName == "MIN" || upperName == "MAX" || upperName == "MEAN" || upperName == "STDDEV" || upperName == "VARIANCE" || upperName == "MEDIAN" || upperName == "QUANTILE" {
+			col.IsAgg = true
+			col.AggFunc = upperName
+			if upperName == "COUNT" && len(e.Args) == 2 {
+				if firstArg, ok := e.Args[0].(ColumnRef); ok && strings.ToUpper(firstArg.Name) == "DISTINCT" {
+					col.Distinct = true
+					col.Expr = e.Args[1]
+				} else {
+					col.Expr = e.Args[0]
+				}
+			} else if len(e.Args) > 0 {
+				col.Expr = e.Args[0]
+			}
+		} else {
+			col.Expr = e
+		}
 	default:
 		col.Expr = e
 	}
@@ -221,13 +250,13 @@ func (p *Parser) parseOr() (Expression, error) {
 }
 
 func (p *Parser) parseAnd() (Expression, error) {
-	left, err := p.parseEquality()
+	left, err := parseEquality(p)
 	if err != nil {
 		return nil, err
 	}
 
 	for p.match(TokenAND) {
-		right, err := p.parseEquality()
+		right, err := parseEquality(p)
 		if err != nil {
 			return nil, err
 		}
@@ -236,7 +265,7 @@ func (p *Parser) parseAnd() (Expression, error) {
 	return left, nil
 }
 
-func (p *Parser) parseEquality() (Expression, error) {
+func parseEquality(p *Parser) (Expression, error) {
 	left, err := p.parseComparison()
 	if err != nil {
 		return nil, err
@@ -262,18 +291,74 @@ func (p *Parser) parseComparison() (Expression, error) {
 		return UnaryExpr{Op: "Not", Expr: expr}, nil
 	}
 
-	left, err := p.parseRange()
+	left, err := p.parseArithmetic()
 	if err != nil {
 		return nil, err
 	}
 
 	for p.match(TokenLT, TokenGT, TokenLTE, TokenGTE) {
 		op := p.previous().Lexeme
-		right, err := p.parseRange()
+		right, err := p.parseArithmetic()
 		if err != nil {
 			return nil, err
 		}
 		left = BinaryExpr{Left: left, Op: op, Right: right}
+	}
+
+	if p.match(TokenIS) {
+		if p.match(TokenNULL) {
+			return IsNullExpr{Expr: left, Negated: false}, nil
+		}
+		if p.match(TokenNOT) {
+			if !p.match(TokenNULL) {
+				return nil, errors.New("expected NULL after IS NOT")
+			}
+			return IsNullExpr{Expr: left, Negated: true}, nil
+		}
+		return nil, errors.New("expected NULL after IS")
+	}
+
+	return left, nil
+}
+
+func (p *Parser) parseArithmetic() (Expression, error) {
+	left, err := p.parseTerm()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.match(TokenPlus, TokenMinus) {
+		op := p.previous().Lexeme
+		right, err := p.parseTerm()
+		if err != nil {
+			return nil, err
+		}
+		left = BinaryExpr{Left: left, Op: op, Right: right}
+	}
+	return left, nil
+}
+
+func (p *Parser) parseTerm() (Expression, error) {
+	left, err := p.parseFactor()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.match(TokenStar, TokenSlash) {
+		op := p.previous().Lexeme
+		right, err := p.parseFactor()
+		if err != nil {
+			return nil, err
+		}
+		left = BinaryExpr{Left: left, Op: op, Right: right}
+	}
+	return left, nil
+}
+
+func (p *Parser) parseFactor() (Expression, error) {
+	left, err := p.parseRange()
+	if err != nil {
+		return nil, err
 	}
 	return left, nil
 }
@@ -382,11 +467,19 @@ func (p *Parser) parsePrimary() (Expression, error) {
 		return Literal{Value: false}, nil
 	}
 
-	if p.match(TokenIdentifier) || p.match(TokenCOUNT) || p.match(TokenSUM) || p.match(TokenMIN) || p.match(TokenMAX) || p.match(TokenMEAN) {
+	if p.match(TokenCASE) {
+		return p.parseCase()
+	}
+
+	if p.match(TokenIdentifier) || p.match(TokenCOUNT) || p.match(TokenSUM) || p.match(TokenMIN) || p.match(TokenMAX) || p.match(TokenMEAN) || p.match(TokenSTDDEV) || p.match(TokenVARIANCE) || p.match(TokenMEDIAN) || p.match(TokenQUANTILE) {
 		name := p.previous().Lexeme
 
 		if p.match(TokenLParen) {
 			args := []Expression{}
+			upperName := strings.ToUpper(name)
+			if upperName == "COUNT" && p.match(TokenDISTINCT) {
+				args = append(args, ColumnRef{Name: "DISTINCT"})
+			}
 			for !p.check(TokenRParen) {
 				arg, err := p.parseExpression()
 				if err != nil {
@@ -409,6 +502,10 @@ func (p *Parser) parsePrimary() (Expression, error) {
 		return ColumnRef{Name: name}, nil
 	}
 
+	if p.match(TokenDISTINCT) {
+		return ColumnRef{Name: "DISTINCT"}, nil
+	}
+
 	if p.match(TokenLParen) {
 		expr, err := p.parseExpression()
 		if err != nil {
@@ -422,30 +519,87 @@ func (p *Parser) parsePrimary() (Expression, error) {
 		return expr, nil
 	}
 
-	if p.match(TokenIS) {
-		if p.match(TokenNULL) {
-			return BinaryExpr{
-				Left:  ColumnRef{Name: ""},
-				Op:    "IS NULL",
-				Right: Literal{Value: nil},
-			}, nil
-		}
+	if p.match(TokenYEAR) || p.match(TokenMONTH) || p.match(TokenDAY) || p.match(TokenHOUR) || p.match(TokenUPPER) || p.match(TokenLOWER) || p.match(TokenTRIM) || p.match(TokenLENGTH) || p.match(TokenSUBSTRING) {
+		name := p.previous().Lexeme
 
-		if p.match(TokenNOT) {
-			if !p.match(TokenNULL) {
-				return nil, errors.New("expected NULL after IS NOT")
+		if p.match(TokenLParen) {
+			args := []Expression{}
+			for !p.check(TokenRParen) {
+				arg, err := p.parseExpression()
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, arg)
+
+				if !p.match(TokenComma) {
+					break
+				}
 			}
-			return BinaryExpr{
-				Left:  ColumnRef{Name: ""},
-				Op:    "IS NOT NULL",
-				Right: Literal{Value: nil},
-			}, nil
-		}
 
-		return nil, errors.New("expected NULL after IS")
+			if !p.match(TokenRParen) {
+				return nil, errors.New("expected ) after function arguments")
+			}
+
+			return FunctionCallExpr{Name: name, Args: args}, nil
+		}
 	}
 
 	return nil, fmt.Errorf("unexpected token: %v", p.peek())
+}
+
+func (p *Parser) parseCase() (Expression, error) {
+	caseExpr := CaseExpr{}
+
+	if !p.check(TokenWHEN) {
+		expr, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		caseExpr.Expr = expr
+	}
+
+	for {
+		if !p.match(TokenWHEN) {
+			return nil, errors.New("expected WHEN in CASE expression")
+		}
+
+		condition, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+
+		if !p.match(TokenTHEN) {
+			return nil, errors.New("expected THEN in CASE expression")
+		}
+
+		then, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+
+		caseExpr.Whens = append(caseExpr.Whens, WhenClause{
+			Condition: condition,
+			Then:      then,
+		})
+
+		if !p.check(TokenWHEN) {
+			break
+		}
+	}
+
+	if p.match(TokenELSE) {
+		elseExpr, err := p.parseExpression()
+		if err != nil {
+			return nil, err
+		}
+		caseExpr.Else = elseExpr
+	}
+
+	if !p.match(TokenEND) {
+		return nil, errors.New("expected END in CASE expression")
+	}
+
+	return caseExpr, nil
 }
 
 func (p *Parser) match(types ...TokenType) bool {
@@ -785,6 +939,54 @@ func (l *Lexer) readIdentifier() Token {
 		tokType = TokenMAX
 	case "MEAN":
 		tokType = TokenMEAN
+	case "STDDEV":
+		tokType = TokenSTDDEV
+	case "VARIANCE":
+		tokType = TokenVARIANCE
+	case "MEDIAN":
+		tokType = TokenMEDIAN
+	case "QUANTILE":
+		tokType = TokenQUANTILE
+	case "CASE":
+		tokType = TokenCASE
+	case "WHEN":
+		tokType = TokenWHEN
+	case "THEN":
+		tokType = TokenTHEN
+	case "ELSE":
+		tokType = TokenELSE
+	case "END":
+		tokType = TokenEND
+	case "OFFSET":
+		tokType = TokenOFFSET
+	case "YEAR":
+		tokType = TokenYEAR
+	case "MONTH":
+		tokType = TokenMONTH
+	case "DAY":
+		tokType = TokenDAY
+	case "HOUR":
+		tokType = TokenHOUR
+	case "UPPER":
+		tokType = TokenUPPER
+	case "LOWER":
+		tokType = TokenLOWER
+	case "TRIM":
+		tokType = TokenTRIM
+	case "LENGTH":
+		tokType = TokenLENGTH
+	case "SUBSTRING":
+		tokType = TokenSUBSTRING
+	case "JOIN":
+		tokType = TokenJOIN
+	case "INNER":
+		tokType = TokenINNER
+	case "LEFT":
+		tokType = TokenLEFT
+	case "RIGHT":
+		tokType = TokenRIGHT
+	case "ON":
+		tokType = TokenON
 	}
 
 	return Token{Type: tokType, Lexeme: lit}
