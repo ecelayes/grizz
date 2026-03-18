@@ -95,3 +95,64 @@ func applyWeekday(df *dataframe.DataFrame, we expr.WeekdayExpr, alloc memory.All
 	}
 	return applyDatetime(df, colExpr.Name, "2006-01-02", func(t time.Time) int64 { return int64(t.Weekday()) }, colExpr.Name+"_weekday", alloc)
 }
+
+func parsePeriod(period string) (time.Duration, error) {
+	switch period {
+	case "1s":
+		return time.Second, nil
+	case "1m":
+		return time.Minute, nil
+	case "1h":
+		return time.Hour, nil
+	case "1d":
+		return 24 * time.Hour, nil
+	case "1w":
+		return 7 * 24 * time.Hour, nil
+	default:
+		return 0, errors.New("unsupported period: " + period)
+	}
+}
+
+func applyTruncate(df *dataframe.DataFrame, te expr.TruncateExpr, alloc memory.Allocator) (series.Series, error) {
+	colExpr, ok := te.Expr.(expr.Column)
+	if !ok {
+		return nil, errors.New("Truncate only supports column expressions")
+	}
+
+	col, err := df.ColByName(colExpr.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	duration, err := parsePeriod(te.Period)
+	if err != nil {
+		return nil, err
+	}
+
+	strCol, ok := col.(*series.StringSeries)
+	if !ok {
+		return nil, errors.New("truncate only supports string columns")
+	}
+
+	result := make([]string, strCol.Len())
+	for i := 0; i < strCol.Len(); i++ {
+		if strCol.IsNull(i) {
+			result[i] = ""
+			continue
+		}
+		t, err := time.Parse("2006-01-02T15:04:05", strCol.Value(i))
+		if err != nil {
+			t2, err2 := time.Parse("2006-01-02", strCol.Value(i))
+			if err2 != nil {
+				result[i] = strCol.Value(i)
+				continue
+			}
+			t = t2
+		}
+		unix := t.Unix()
+		truncated := (unix / int64(duration.Seconds())) * int64(duration.Seconds())
+		result[i] = time.Unix(truncated, 0).Format("2006-01-02T15:04:05")
+	}
+
+	return series.NewStringSeries(colExpr.Name+"_truncated", alloc, result, nil), nil
+}

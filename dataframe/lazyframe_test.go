@@ -130,3 +130,56 @@ func TestLazyFrameGroupByTail(t *testing.T) {
 		t.Error("Expected non-empty explain")
 	}
 }
+
+func TestLazyFrameOrderByNullsFirst(t *testing.T) {
+	df := New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3, 4, 5}, nil))
+
+	lf := df.Lazy()
+	result := lf.OrderByNullsFirst("a", false)
+
+	if result == nil {
+		t.Error("Expected LazyFrame not nil")
+	}
+
+	explain := result.Explain()
+	if len(explain) == 0 {
+		t.Error("Expected non-empty explain")
+	}
+
+	if !containsString(explain, "NULLS FIRST") {
+		t.Errorf("Expected explain to contain 'NULLS FIRST', got: %s", explain)
+	}
+}
+
+func TestLazyFrameOrderByNullsLast(t *testing.T) {
+	df := New()
+	df.AddSeries(series.NewInt64Series("a", memory.DefaultAllocator, []int64{1, 2, 3, 4, 5}, nil))
+
+	lf := df.Lazy()
+	result := lf.OrderByNullsLast("a", true)
+
+	if result == nil {
+		t.Error("Expected LazyFrame not nil")
+	}
+
+	explain := result.Explain()
+	if len(explain) == 0 {
+		t.Error("Expected non-empty explain")
+	}
+
+	if !containsString(explain, "NULLS LAST") {
+		t.Errorf("Expected explain to contain 'NULLS LAST', got: %s", explain)
+	}
+}
+
+func containsString(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 && len(s) >= len(substr) && func() bool {
+		for i := 0; i <= len(s)-len(substr); i++ {
+			if s[i:i+len(substr)] == substr {
+				return true
+			}
+		}
+		return false
+	}()
+}

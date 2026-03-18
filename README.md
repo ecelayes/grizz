@@ -8,8 +8,10 @@ A Polars-inspired DataFrame library for Go, built on Apache Arrow.
 - **Lazy Evaluation**: Build complex queries efficiently with lazy DataFrames
 - **Apache Arrow Backend**: Efficient memory handling and zero-copy operations
 - **Rich Expression System**: Filter, transform, aggregate with expressions
-- **Multiple Data Types**: Int64, Float64, String, Boolean with null support
-- **I/O Support**: CSV, JSON, and Parquet read/write
+- **Multiple Data Types**: Int8-64, UInt8-64, Float64, String, Boolean, Binary with null support
+- **I/O Support**: CSV, JSON, Parquet, and Arrow IPC read/write
+- **Optimizers**: Projection pushdown and Slice pushdown for query optimization
+- **Advanced Operations**: Rolling windows, cumulative operations, window functions
 
 ## Installation
 
@@ -52,9 +54,11 @@ func main() {
 | Type | Go | Description |
 |------|-----|-------------|
 | Int64 | `int64` | 64-bit integer |
+| UInt64/32/16/8 | `uint64/32/16/8` | Unsigned integers |
 | Float64 | `float64` | 64-bit float |
 | String | `string` | UTF-8 string |
 | Boolean | `bool` | Boolean values |
+| Binary | `[]byte` | Binary data |
 
 All types support null values via validity bitmaps.
 
@@ -103,6 +107,10 @@ expr.Trim(expr.Col("text"))
 expr.Contains(expr.Col("text"), expr.Lit("pattern"))
 expr.Replace(expr.Col("text"), expr.Lit("old"), expr.Lit("new"))
 expr.Length(expr.Col("name"))
+
+// Additional string operations
+expr.Extract(expr.Col("text"), expr.Lit(`(\d+)`))
+expr.Find(expr.Col("text"), expr.Lit("substring"))
 ```
 
 ### Aggregations
@@ -113,6 +121,26 @@ expr.Count("id")
 expr.Min("price")
 expr.Max("rating")
 expr.Mean("score")
+```
+
+### Rolling Windows
+
+```go
+// Rolling window operations
+expr.RollingSum(expr.Col("value"), 7, 7)
+expr.RollingMean(expr.Col("value"), 7, 7)
+expr.RollingMin(expr.Col("value"), 7, 7)
+expr.RollingMax(expr.Col("value"), 7, 7)
+```
+
+### Cumulative Operations
+
+```go
+// Cumulative operations
+expr.CumSum(expr.Col("value"))
+expr.CumProd(expr.Col("value"))
+expr.CumMin(expr.Col("value"))
+expr.CumMax(expr.Col("value"))
 ```
 
 ### Window Functions
@@ -147,14 +175,26 @@ df.Distinct()
 // Group by
 df.GroupBy("department").Agg(expr.Sum("salary"))
 
+// Additional group by operations
+df.GroupBy("department").Head(3)
+df.GroupBy("department").Tail(3)
+df.GroupBy("department").Groups()
+
 // Join
 df1.Join(df2, "id", dataframe.Inner)
+
+// Additional join types
+df.SemiJoin(df2, "id")
+df.AntiJoin(df2, "id")
 
 // Sort
 df.Sort("age", false)  // false = ascending
 
 // Limit
 df.Limit(100)
+
+// Additional operations
+df.Tail(10)
 ```
 
 ### Lazy API
@@ -179,11 +219,13 @@ result, _ := lazy.Collect(engine.Execute)
 df, _ := csv.Read("file.csv")
 df, _ := json.Read("file.json")
 df, _ := parquet.Read("file.parquet")
+df, _ := arrow.Read("file.arrow")
 
 // Write
 csv.Write(df, "output.csv")
 json.Write(df, "output.json")
 parquet.Write(df, "output.parquet")
+arrow.Write(df, "output.arrow")
 ```
 
 ## Architecture

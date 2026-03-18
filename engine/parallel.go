@@ -173,47 +173,62 @@ func applyMaskParallel(df *dataframe.DataFrame, mask []bool, workers int) (*data
 func filterColumnParallel(col series.Series, mask []bool) series.Series {
 	alloc := memory.DefaultAllocator
 
+	count := 0
+	for _, v := range mask {
+		if v {
+			count++
+		}
+	}
+
 	switch typedCol := col.(type) {
 	case *series.StringSeries:
-		var filtered []string
-		var valid []bool
+		filtered := make([]string, count)
+		valid := make([]bool, count)
+		idx := 0
 		for j, keep := range mask {
 			if keep {
-				filtered = append(filtered, typedCol.Value(j))
-				valid = append(valid, !typedCol.IsNull(j))
+				filtered[idx] = typedCol.Value(j)
+				valid[idx] = !typedCol.IsNull(j)
+				idx++
 			}
 		}
 		return series.NewStringSeries(typedCol.Name(), alloc, filtered, valid)
 
 	case *series.Int64Series:
-		var filtered []int64
-		var valid []bool
+		filtered := make([]int64, count)
+		valid := make([]bool, count)
+		idx := 0
 		for j, keep := range mask {
 			if keep {
-				filtered = append(filtered, typedCol.Value(j))
-				valid = append(valid, !typedCol.IsNull(j))
+				filtered[idx] = typedCol.Value(j)
+				valid[idx] = !typedCol.IsNull(j)
+				idx++
 			}
 		}
 		return series.NewInt64Series(typedCol.Name(), alloc, filtered, valid)
 
 	case *series.Float64Series:
-		var filtered []float64
-		var valid []bool
+		filtered := make([]float64, count)
+		valid := make([]bool, count)
+		idx := 0
 		for j, keep := range mask {
 			if keep {
-				filtered = append(filtered, typedCol.Value(j))
-				valid = append(valid, !typedCol.IsNull(j))
+				filtered[idx] = typedCol.Value(j)
+				valid[idx] = !typedCol.IsNull(j)
+				idx++
 			}
 		}
 		return series.NewFloat64Series(typedCol.Name(), alloc, filtered, valid)
 
 	case *series.BooleanSeries:
-		var filtered []bool
-		var valid []bool
+		filtered := make([]bool, count)
+		valid := make([]bool, count)
+		idx := 0
 		for j, keep := range mask {
 			if keep {
-				filtered = append(filtered, typedCol.Value(j))
-				valid = append(valid, !typedCol.IsNull(j))
+				filtered[idx] = typedCol.Value(j)
+				valid[idx] = !typedCol.IsNull(j)
+				idx++
 			}
 		}
 		return series.NewBooleanSeries(typedCol.Name(), alloc, filtered, valid)

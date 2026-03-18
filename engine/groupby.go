@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"math"
 	"sort"
 
 	"github.com/ecelayes/grizz/dataframe"
@@ -57,30 +58,27 @@ func applyGroupBy(df *dataframe.DataFrame, keys []string, aggs []expr.Aggregatio
 
 		switch typedAggCol := aggCol.(type) {
 		case *series.Float64Series:
-			var outVals []float64
-			for _, key := range outKeys {
+			outVals := make([]float64, len(outKeys))
+			for i, key := range outKeys {
 				indices := groups[key]
-				val := calculateAggFloat(typedAggCol, indices, agg.Func, agg.Param)
-				outVals = append(outVals, val)
+				outVals[i] = calculateAggFloat(typedAggCol, indices, agg.Func, agg.Param)
 			}
 			result.AddSeries(series.NewFloat64Series(aggName, alloc, outVals, nil))
 
 		case *series.Int64Series:
 			if agg.Func == expr.MeanAgg || agg.Func == expr.StdAgg || agg.Func == expr.VarAgg ||
 				agg.Func == expr.MedianAgg || agg.Func == expr.QuantileAgg {
-				var outVals []float64
-				for _, key := range outKeys {
+				outVals := make([]float64, len(outKeys))
+				for i, key := range outKeys {
 					indices := groups[key]
-					val := calculateAggIntToFloat(typedAggCol, indices, agg.Func, agg.Param)
-					outVals = append(outVals, val)
+					outVals[i] = calculateAggIntToFloat(typedAggCol, indices, agg.Func, agg.Param)
 				}
 				result.AddSeries(series.NewFloat64Series(aggName, alloc, outVals, nil))
 			} else {
-				var outVals []int64
-				for _, key := range outKeys {
+				outVals := make([]int64, len(outKeys))
+				for i, key := range outKeys {
 					indices := groups[key]
-					val := calculateAggInt(typedAggCol, indices, agg.Func)
-					outVals = append(outVals, val)
+					outVals[i] = calculateAggInt(typedAggCol, indices, agg.Func)
 				}
 				result.AddSeries(series.NewInt64Series(aggName, alloc, outVals, nil))
 			}
@@ -131,7 +129,7 @@ func calculateAggFloat(col *series.Float64Series, indices []int, aggFunc expr.Ag
 		}
 		return maxVal
 	case expr.StdAgg:
-		return sqrt(popVarianceFloat(col, indices))
+		return math.Sqrt(popVarianceFloat(col, indices))
 	case expr.VarAgg:
 		return popVarianceFloat(col, indices)
 	case expr.MedianAgg:
@@ -191,11 +189,7 @@ func quantileFloat(col *series.Float64Series, indices []int, q float64) float64 
 }
 
 func sqrt(x float64) float64 {
-	z := 1.0
-	for i := 0; i < 20; i++ {
-		z = (z + x/z) / 2
-	}
-	return z
+	return math.Sqrt(x)
 }
 
 func calculateAggInt(col *series.Int64Series, indices []int, aggFunc expr.AggFunc) int64 {
@@ -249,7 +243,7 @@ func calculateAggIntToFloat(col *series.Int64Series, indices []int, aggFunc expr
 		}
 		return sum / float64(len(indices))
 	case expr.StdAgg:
-		return sqrt(popVarianceInt(col, indices))
+		return math.Sqrt(popVarianceInt(col, indices))
 	case expr.VarAgg:
 		return popVarianceInt(col, indices)
 	case expr.MedianAgg:

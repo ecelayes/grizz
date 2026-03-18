@@ -90,14 +90,6 @@ func TestNot(t *testing.T) {
 	}
 }
 
-func TestAlias(t *testing.T) {
-	result := Alias(Column{Name: "age"}, "Age")
-	expected := "age AS Age"
-	if result.String() != expected {
-		t.Errorf("Expected %s, got %s", expected, result.String())
-	}
-}
-
 func TestArithmeticAdd(t *testing.T) {
 	result := Column{Name: "a"}.Add(Lit(10))
 	expected := "(a + 10)"

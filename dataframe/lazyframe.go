@@ -202,6 +202,8 @@ type OrderByPlan struct {
 	Input      LogicalPlan
 	Column     string
 	Descending bool
+	NullsFirst bool
+	NullsLast  bool
 }
 
 func (o OrderByPlan) Explain(indent int) string {
@@ -210,8 +212,14 @@ func (o OrderByPlan) Explain(indent int) string {
 	if o.Descending {
 		dir = "DESC"
 	}
+	nulls := ""
+	if o.NullsFirst {
+		nulls = " NULLS FIRST"
+	} else if o.NullsLast {
+		nulls = " NULLS LAST"
+	}
 	inputStr := o.Input.Explain(indent + 1)
-	return fmt.Sprintf("%sOrderBy: %s (%s)\n%s", pad, o.Column, dir, inputStr)
+	return fmt.Sprintf("%sOrderBy: %s (%s)%s\n%s", pad, o.Column, dir, nulls, inputStr)
 }
 
 func (lf *LazyFrame) OrderBy(column string, descending bool) *LazyFrame {
@@ -220,6 +228,28 @@ func (lf *LazyFrame) OrderBy(column string, descending bool) *LazyFrame {
 			Input:      lf.plan,
 			Column:     column,
 			Descending: descending,
+		},
+	}
+}
+
+func (lf *LazyFrame) OrderByNullsFirst(column string, descending bool) *LazyFrame {
+	return &LazyFrame{
+		plan: OrderByPlan{
+			Input:      lf.plan,
+			Column:     column,
+			Descending: descending,
+			NullsFirst: true,
+		},
+	}
+}
+
+func (lf *LazyFrame) OrderByNullsLast(column string, descending bool) *LazyFrame {
+	return &LazyFrame{
+		plan: OrderByPlan{
+			Input:      lf.plan,
+			Column:     column,
+			Descending: descending,
+			NullsLast:  true,
 		},
 	}
 }

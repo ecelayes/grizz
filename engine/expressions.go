@@ -118,6 +118,14 @@ func evaluateExpression(df *dataframe.DataFrame, colExpr expr.Expr, alloc memory
 		return applyCumMin(df, e, alloc)
 	case expr.CumMaxExpr:
 		return applyCumMax(df, e, alloc)
+	case expr.DiffExpr:
+		return applyDiff(df, e, alloc)
+	case expr.PctChangeExpr:
+		return applyPctChange(df, e, alloc)
+	case expr.TruncateExpr:
+		return applyTruncate(df, e, alloc)
+	case expr.EwmMeanExpr:
+		return applyEwmMean(df, e, alloc)
 	default:
 		return nil, errors.New("unsupported expression in WithColumns")
 	}

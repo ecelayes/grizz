@@ -165,3 +165,63 @@ func TestWithColumnsYear(t *testing.T) {
 		t.Errorf("Expected 2024, got %d", intResult.Value(0))
 	}
 }
+
+func TestWithColumnsTruncate(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("timestamp", memory.DefaultAllocator, []string{"2024-01-15T14:30:00", "2024-01-15T15:45:00"}, nil))
+
+	result, err := applyWithColumns(df, []expr.Expr{
+		expr.Truncate(expr.Col("timestamp"), "1h").Alias("truncated"),
+	})
+	if err != nil {
+		t.Fatalf("applyWithColumns with Truncate failed: %v", err)
+	}
+	if result.NumCols() != 2 {
+		t.Errorf("Expected 2 columns, got %d", result.NumCols())
+	}
+	truncCol, _ := result.ColByName("truncated")
+	strResult := truncCol.(*series.StringSeries)
+	if strResult.Len() != 2 {
+		t.Errorf("Expected 2 elements, got %d", strResult.Len())
+	}
+}
+
+func TestTruncateHour(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("timestamp", memory.DefaultAllocator, []string{"2024-01-15T14:30:00", "2024-01-15T14:45:00", "2024-01-15T15:15:00"}, nil))
+
+	result, err := applyTruncate(df, expr.Truncate(expr.Col("timestamp"), "1h"), memory.DefaultAllocator)
+	if err != nil {
+		t.Fatalf("applyTruncate failed: %v", err)
+	}
+
+	strResult := result.(*series.StringSeries)
+	if strResult.Len() != 3 {
+		t.Errorf("Expected 3 elements, got %d", strResult.Len())
+	}
+}
+
+func TestTruncateDay(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("date", memory.DefaultAllocator, []string{"2024-01-15T14:30:00", "2024-01-16T08:00:00", "2024-01-17T23:59:59"}, nil))
+
+	result, err := applyTruncate(df, expr.Truncate(expr.Col("date"), "1d"), memory.DefaultAllocator)
+	if err != nil {
+		t.Fatalf("applyTruncate failed: %v", err)
+	}
+
+	strResult := result.(*series.StringSeries)
+	if strResult.Len() != 3 {
+		t.Errorf("Expected 3 elements, got %d", strResult.Len())
+	}
+}
+
+func TestTruncateInvalidPeriod(t *testing.T) {
+	df := dataframe.New()
+	df.AddSeries(series.NewStringSeries("date", memory.DefaultAllocator, []string{"2024-01-15"}, nil))
+
+	_, err := applyTruncate(df, expr.Truncate(expr.Col("date"), "invalid"), memory.DefaultAllocator)
+	if err == nil {
+		t.Error("Expected error for invalid period")
+	}
+}
